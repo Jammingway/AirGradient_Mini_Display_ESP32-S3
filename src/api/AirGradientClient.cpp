@@ -11,9 +11,9 @@ void AirGradientClient::begin(SettingsManager& settings, WifiManager& wifi) {
     _settings = &settings;
     _wifi = &wifi;
     _mutex = xSemaphoreCreateMutex();
-    // 12KB stack: TLS handshake + JSON parsing headroom. Runs on core 0,
+    // 16KB stack: TLS handshake + JSON parsing headroom. Runs on core 0,
     // away from the LVGL/loop core.
-    xTaskCreatePinnedToCore(taskEntry, "ag_api", 12288, this, 1, &_task, 0);
+    xTaskCreatePinnedToCore(taskEntry, "ag_api", 16384, this, 1, &_task, 0);
 }
 
 bool AirGradientClient::latest(AirGradientReading& out) const {
@@ -47,19 +47,28 @@ void AirGradientClient::taskLoop() {
             continue;
         }
 
-        _lastAttemptMs = millis();
-        if (fetchOnce()) {
-            _failures = 0;
-            _lastError = ApiError::None;
-        } else {
+        // Each poll cycle makes up to retryCount attempts, retryDelaySec
+        // apart (user-configurable in Settings -> API).
+        uint8_t attempts = max<uint8_t>(1, _settings->get().retryCount);
+        uint16_t delaySec = max<uint16_t>(1, _settings->get().retryDelaySec);
+        for (uint8_t attempt = 1; attempt <= attempts; attempt++) {
+            _lastAttemptMs = millis();
+            if (fetchOnce()) {
+                _failures = 0;
+                _lastError = ApiError::None;
+                break;
+            }
             _failures = _failures + 1;
-            // Quick retry once after 5s on failure, then fall back to cadence.
-            if (_failures == 1) {
-                vTaskDelay(pdMS_TO_TICKS(5000));
-                if (_wifi->isConnected() && fetchOnce()) {
-                    _failures = 0;
-                    _lastError = ApiError::None;
+            if (attempt < attempts) {
+                LOG_W("api", "attempt %u/%u failed — retrying in %u s",
+                      attempt, attempts, delaySec);
+                vTaskDelay(pdMS_TO_TICKS((uint32_t)delaySec * 1000));
+                if (!_wifi->isConnected()) {
+                    _lastError = ApiError::NoNetwork;
+                    break;
                 }
+            } else {
+                LOG_W("api", "all %u attempts failed this cycle", attempts);
             }
         }
     }
@@ -84,6 +93,7 @@ bool AirGradientClient::fetchOnce() {
     bool ok;
     if (https) {
         secureClient.setInsecure();  // MVP: no cert pinning
+        secureClient.setHandshakeTimeout(s.timeoutSec);  // seconds
         ok = http.begin(secureClient, url);
     } else {
         ok = http.begin(plainClient, url);

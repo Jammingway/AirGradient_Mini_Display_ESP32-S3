@@ -86,7 +86,7 @@ void BootManager::onSettingsClosed(const SettingsScreen::Result& res) {
     }
 
     if (res.networkChanged || res.factoryReset) {
-        _terminal.pushLine("settings updated — reconnecting");
+        _terminal.pushLine("settings updated - reconnecting");
         _announcedConnect = false;
         _wifi->restart();
     }
@@ -118,13 +118,13 @@ void BootManager::tick() {
         case State::Terminal: {
             if (_wifi->state() == WifiManager::State::Connected && !_announcedConnect) {
                 _announcedConnect = true;
-                _terminal.pushLine("polling airgradient api …");
+                _terminal.pushLine("polling airgradient api ...");
                 _terminal.showConfigHint(false);
                 _api->requestNow();
             }
             AirGradientReading r;
             if (_api->latest(r)) {
-                _terminal.pushLine("data received — loading dashboard");
+                _terminal.pushLine("data received - loading dashboard");
                 enterDashboard();
                 break;
             }
@@ -135,14 +135,14 @@ void BootManager::tick() {
                 lastShown = err;
                 switch (err) {
                     case ApiError::AuthFailed:
-                        _terminal.pushLine("api auth failed — check token");
+                        _terminal.pushLine("api auth failed - check token");
                         _terminal.showConfigHint(true);
                         break;
                     case ApiError::Timeout:
-                        _terminal.pushLine("api timeout — retrying");
+                        _terminal.pushLine("api timeout - retrying");
                         break;
                     default:
-                        _terminal.pushLine("api error — retrying");
+                        _terminal.pushLine("api error - retrying");
                         break;
                 }
             }
@@ -174,9 +174,9 @@ void BootManager::updateDashboardStatus() {
     bool stale = !hasData || (millis() - r.receivedAtMs) > staleMs;
 
     String headline;
-    if (!wifiOk) headline = "offline — showing cached data";
-    else if (_api->lastError() == ApiError::AuthFailed) headline = "API auth failed — check token";
-    else if (_api->consecutiveFailures() > 1) headline = "API unreachable — showing cached data";
+    if (!wifiOk) headline = "offline - showing cached data";
+    else if (_api->lastError() == ApiError::AuthFailed) headline = "API auth failed - check token";
+    else if (_api->consecutiveFailures() > 1) headline = "API unreachable - showing cached data";
 
     _dashboard.updateStatus(_wifi->statusText(), !wifiOk, updated, stale, headline, *_theme);
 }

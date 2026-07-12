@@ -35,9 +35,20 @@ bool GT911Touch::begin(CH422G& expander) {
 
 bool GT911Touch::read(int16_t& x, int16_t& y) {
     uint8_t status = 0;
-    if (!readRegs(REG_STATUS, &status, 1)) return false;
+    bool i2cOk = readRegs(REG_STATUS, &status, 1);
 
-    if (!(status & 0x80)) return false;  // no new coordinate data
+    if (!i2cOk || !(status & 0x80)) {
+        // No fresh report. The GT911 reports at ~100 Hz while touched, so a
+        // short gap means "state unchanged" — keep reporting the held press
+        // instead of bouncing to released mid-click.
+        if (_lastDown && millis() - _lastReportMs < HOLD_TIMEOUT_MS) {
+            x = _lastX;
+            y = _lastY;
+            return true;
+        }
+        _lastDown = false;
+        return false;
+    }
 
     uint8_t touches = status & 0x0F;
     bool down = false;
@@ -50,10 +61,14 @@ bool GT911Touch::read(int16_t& x, int16_t& y) {
             if (x >= 0 && x < LCD_H_RES && y >= 0 && y < LCD_V_RES) {
                 down = true;
                 _lastTouchMs = millis();
+                _lastX = x;
+                _lastY = y;
             }
         }
     }
     writeReg(REG_STATUS, 0);  // ack: clear buffer status
+    _lastDown = down;
+    _lastReportMs = millis();
     return down;
 }
 

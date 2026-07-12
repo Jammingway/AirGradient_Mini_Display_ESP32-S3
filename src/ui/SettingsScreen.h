@@ -62,6 +62,8 @@ private:
     lv_obj_t* _taApiKey = nullptr;
     lv_obj_t* _ddPoll = nullptr;
     lv_obj_t* _ddTimeout = nullptr;
+    lv_obj_t* _ddRetryCount = nullptr;
+    lv_obj_t* _ddRetryDelay = nullptr;
     // General
     lv_obj_t* _ddTheme = nullptr;
     lv_obj_t* _slBrightness = nullptr;

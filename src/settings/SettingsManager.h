@@ -18,6 +18,8 @@ struct AppSettings {
     String apiKey;
     uint16_t pollIntervalSec = 300;
     uint16_t timeoutSec = 10;
+    uint8_t retryCount = 3;        // attempts per poll cycle (1 = no retry)
+    uint16_t retryDelaySec = 10;   // pause between attempts
 
     // General
     String theme = "dark";
@@ -45,7 +47,8 @@ public:
     void setNetwork(const String& ssid1, const String& pass1,
                     const String& ssid2, const String& pass2);
     void setApi(const String& endpoint, const String& apiKey,
-                uint16_t pollIntervalSec, uint16_t timeoutSec);
+                uint16_t pollIntervalSec, uint16_t timeoutSec,
+                uint8_t retryCount, uint16_t retryDelaySec);
     void setGeneral(const String& theme, uint8_t brightness,
                     uint16_t sleepTimeoutMin, bool tempF, bool usAqi);
     void setLayoutJson(const String& layoutJson);

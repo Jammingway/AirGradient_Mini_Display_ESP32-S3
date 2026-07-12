@@ -24,6 +24,12 @@ static const uint16_t POLL_VALUES[] = {120, 300, 600, 900};
 static constexpr uint16_t POLL_DEFAULT_INDEX = 1;  // 5 min
 static const char* TIMEOUT_OPTIONS = "5 s\n10 s\n30 s";
 static const uint16_t TIMEOUT_VALUES[] = {5, 10, 30};
+static const char* RETRY_COUNT_OPTIONS = "1 (no retry)\n2\n3\n5\n10";
+static const uint16_t RETRY_COUNT_VALUES[] = {1, 2, 3, 5, 10};
+static constexpr uint16_t RETRY_COUNT_DEFAULT_INDEX = 2;  // 3 attempts
+static const char* RETRY_DELAY_OPTIONS = "5 s\n10 s\n30 s\n60 s";
+static const uint16_t RETRY_DELAY_VALUES[] = {5, 10, 30, 60};
+static constexpr uint16_t RETRY_DELAY_DEFAULT_INDEX = 1;  // 10 s
 static const char* SLEEP_OPTIONS = "Never\n3 min\n5 min\n15 min\n30 min\n60 min";
 static const uint16_t SLEEP_VALUES[] = {0, 3, 5, 15, 30, 60};
 
@@ -222,6 +228,12 @@ void SettingsScreen::buildApiTab(lv_obj_t* tab) {
                                            POLL_DEFAULT_INDEX));
     _ddTimeout = makeDropdownRow(tab, "Request timeout", TIMEOUT_OPTIONS,
                                  indexOfValue(TIMEOUT_VALUES, 3, s.timeoutSec));
+    _ddRetryCount = makeDropdownRow(tab, "Attempts per poll", RETRY_COUNT_OPTIONS,
+                                    indexOfValue(RETRY_COUNT_VALUES, 5, s.retryCount,
+                                                 RETRY_COUNT_DEFAULT_INDEX));
+    _ddRetryDelay = makeDropdownRow(tab, "Delay between attempts", RETRY_DELAY_OPTIONS,
+                                    indexOfValue(RETRY_DELAY_VALUES, 4, s.retryDelaySec,
+                                                 RETRY_DELAY_DEFAULT_INDEX));
 }
 
 void SettingsScreen::buildGeneralTab(lv_obj_t* tab) {
@@ -324,9 +336,12 @@ void SettingsScreen::save() {
     String apiKey = lv_textarea_get_text(_taApiKey);
     uint16_t poll = POLL_VALUES[lv_dropdown_get_selected(_ddPoll)];
     uint16_t timeout = TIMEOUT_VALUES[lv_dropdown_get_selected(_ddTimeout)];
+    uint8_t retryCount = (uint8_t)RETRY_COUNT_VALUES[lv_dropdown_get_selected(_ddRetryCount)];
+    uint16_t retryDelay = RETRY_DELAY_VALUES[lv_dropdown_get_selected(_ddRetryDelay)];
     if (endpoint != s.endpoint || apiKey != s.apiKey ||
-        poll != s.pollIntervalSec || timeout != s.timeoutSec) {
-        _settings->setApi(endpoint, apiKey, poll, timeout);
+        poll != s.pollIntervalSec || timeout != s.timeoutSec ||
+        retryCount != s.retryCount || retryDelay != s.retryDelaySec) {
+        _settings->setApi(endpoint, apiKey, poll, timeout, retryCount, retryDelay);
         _result.apiChanged = true;
     }
 

@@ -35,6 +35,8 @@ void SettingsManager::load() {
     _s.apiKey = _prefs.getString("apikey", "");
     _s.pollIntervalSec = _prefs.getUShort("poll", 300);
     _s.timeoutSec = _prefs.getUShort("timeout", 10);
+    _s.retryCount = _prefs.getUChar("rcount", 3);
+    _s.retryDelaySec = _prefs.getUShort("rdelay", 10);
     _s.theme = _prefs.getString("theme", "dark");
     _s.brightness = _prefs.getUChar("bright", 100);
     _s.sleepTimeoutMin = _prefs.getUShort("sleep", 0);
@@ -56,16 +58,22 @@ void SettingsManager::setNetwork(const String& ssid1, const String& pass1,
 }
 
 void SettingsManager::setApi(const String& endpoint, const String& apiKey,
-                             uint16_t pollIntervalSec, uint16_t timeoutSec) {
+                             uint16_t pollIntervalSec, uint16_t timeoutSec,
+                             uint8_t retryCount, uint16_t retryDelaySec) {
     _s.endpoint = endpoint.length() ? endpoint : DEFAULT_ENDPOINT;
     _s.apiKey = apiKey;
     _s.pollIntervalSec = max<uint16_t>(pollIntervalSec, 15);
     _s.timeoutSec = constrain(timeoutSec, (uint16_t)3, (uint16_t)60);
+    _s.retryCount = constrain(retryCount, (uint8_t)1, (uint8_t)10);
+    _s.retryDelaySec = constrain(retryDelaySec, (uint16_t)1, (uint16_t)120);
     _prefs.putString("endpt", _s.endpoint);
     _prefs.putString("apikey", _s.apiKey);
     _prefs.putUShort("poll", _s.pollIntervalSec);
     _prefs.putUShort("timeout", _s.timeoutSec);
-    LOG_I("settings", "api saved (endpoint='%s')", _s.endpoint.c_str());
+    _prefs.putUChar("rcount", _s.retryCount);
+    _prefs.putUShort("rdelay", _s.retryDelaySec);
+    LOG_I("settings", "api saved (endpoint='%s', retries=%u @ %us)",
+          _s.endpoint.c_str(), _s.retryCount, _s.retryDelaySec);
 }
 
 void SettingsManager::setGeneral(const String& theme, uint8_t brightness,

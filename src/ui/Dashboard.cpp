@@ -7,6 +7,7 @@
 #include "../utils/Logger.h"
 
 void Dashboard::create(const ThemeManager& theme, const SettingsManager& settings) {
+    _theme = &theme;
     const ThemePalette& p = theme.palette();
 
     _screen = lv_obj_create(nullptr);
@@ -29,6 +30,7 @@ void Dashboard::load(bool deletePrev) {
 }
 
 void Dashboard::rebuild(const ThemeManager& theme, const SettingsManager& settings) {
+    _theme = &theme;
     _widgets.clear();
     lv_obj_clean(_grid);
     buildWidgets(theme, settings);
@@ -123,15 +125,29 @@ void Dashboard::buildWidgets(const ThemeManager& theme, const SettingsManager& s
         // Tapping the "last updated" card triggers a manual refresh.
         InfoWidget* info = w->asInfo();
         if (info && info->kind() == InfoWidget::Kind::Updated) {
-            lv_obj_add_flag(info->root(), LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_add_event_cb(info->root(), [](lv_event_t* e) {
-                auto* self = static_cast<Dashboard*>(lv_event_get_user_data(e));
-                if (self->_refreshCb) self->_refreshCb();
-            }, LV_EVENT_CLICKED, this);
+            lv_obj_t* card = info->root();
+            lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
+            // Visible press feedback so a registered tap is unmistakable.
+            lv_obj_set_style_border_color(card, theme.palette().accent, LV_STATE_PRESSED);
+            lv_obj_set_style_border_width(card, 2, LV_STATE_PRESSED);
+            lv_obj_add_event_cb(card, [](lv_event_t* e) {
+                static_cast<Dashboard*>(lv_event_get_user_data(e))->onUpdatedCardClicked();
+            }, LV_EVENT_SHORT_CLICKED, this);
         }
         _widgets.push_back(std::move(w));
     }
     LOG_I("dashboard", "built %d widgets (%dx%d grid)", (int)_widgets.size(), cols, rows);
+}
+
+void Dashboard::onUpdatedCardClicked() {
+    // Immediate feedback; the next status tick overwrites it with real age.
+    for (auto& w : _widgets) {
+        InfoWidget* info = w->asInfo();
+        if (info && info->kind() == InfoWidget::Kind::Updated && _theme) {
+            info->setText("refreshing...", false, *_theme);
+        }
+    }
+    if (_refreshCb) _refreshCb();
 }
 
 void Dashboard::updateReading(const AirGradientReading& r, const AppSettings& s,

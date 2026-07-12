@@ -43,10 +43,13 @@ private:
     void buildTopBar(const ThemeManager& theme);
     void buildWidgets(const ThemeManager& theme, const SettingsManager& settings);
 
+    void onUpdatedCardClicked();
+
     lv_obj_t* _screen = nullptr;
     lv_obj_t* _grid = nullptr;
     lv_obj_t* _titleLbl = nullptr;
     lv_obj_t* _headlineLbl = nullptr;
+    const ThemeManager* _theme = nullptr;
 
     std::vector<std::unique_ptr<Widget>> _widgets;
     ActionCallback _refreshCb;

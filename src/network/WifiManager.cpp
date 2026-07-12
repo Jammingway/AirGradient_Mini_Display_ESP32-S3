@@ -8,6 +8,9 @@ void WifiManager::begin(SettingsManager& settings) {
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(false);  // reconnect policy is ours
     WiFi.persistent(false);        // credentials live in our own NVS namespace
+    // Modem power-save adds seconds of latency to the first packets after an
+    // idle period — enough to time out the first API poll of each cycle.
+    WiFi.setSleep(false);
 
     if (_settings->get().ssid1.length() > 0) {
         startAttempt(0);
@@ -52,7 +55,7 @@ void WifiManager::enterRetryWait() {
     _state = State::WaitingRetry;
     _stateSinceMs = millis();
     _connectedFlag = false;
-    notify("all networks failed — retrying in " + String(_retryDelayMs / 1000) + "s");
+    notify("all networks failed - retrying in " + String(_retryDelayMs / 1000) + "s");
     LOG_W("wifi", "retry in %lu ms", _retryDelayMs);
 }
 
@@ -85,7 +88,7 @@ void WifiManager::tick() {
         case State::Connected:
             if (WiFi.status() != WL_CONNECTED) {
                 _connectedFlag = false;
-                notify("wifi lost — reconnecting");
+                notify("wifi lost - reconnecting");
                 LOG_W("wifi", "connection lost");
                 startAttempt(0);
             }
@@ -102,9 +105,9 @@ void WifiManager::tick() {
 String WifiManager::statusText() const {
     switch (_state) {
         case State::Idle:         return "not configured";
-        case State::Connecting:   return "connecting…";
+        case State::Connecting:   return "connecting...";
         case State::Connected:    return _currentSsid + " (" + String(WiFi.RSSI()) + " dBm)";
-        case State::WaitingRetry: return "offline — retrying";
+        case State::WaitingRetry: return "offline - retrying";
     }
     return "";
 }
