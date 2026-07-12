@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320">
+  <!-- anime-style red panda bust for the <syntax_error> splash screen -->
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#1C2330"/>
+      <stop offset="70%" stop-color="#131822"/>
+      <stop offset="100%" stop-color="#0F1115"/>
+    </radialGradient>
+    <radialGradient id="iris" cx="35%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="#6B4028"/>
+      <stop offset="55%" stop-color="#3B2318"/>
+      <stop offset="100%" stop-color="#1A0F0A"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="320" height="320" fill="url(#glow)"/>
+
+  <!-- tail sweeping up on the right -->
+  <path d="M 236 296 C 310 272 316 196 282 148" fill="none"
+        stroke="#2A1712" stroke-width="52" stroke-linecap="round"/>
+  <path d="M 236 296 C 310 272 316 196 282 148" fill="none"
+        stroke="#E1663F" stroke-width="44" stroke-linecap="round"/>
+  <path d="M 236 296 C 310 272 316 196 282 148" fill="none"
+        stroke="#8E3A22" stroke-width="44" stroke-linecap="butt"
+        stroke-dasharray="16 26"/>
+
+  <!-- shoulders / chest (dark, like a real red panda) -->
+  <ellipse cx="150" cy="308" rx="98" ry="58" fill="#3A241C" stroke="#2A1712" stroke-width="4"/>
+
+  <!-- ears -->
+  <path d="M 52 96 Q 44 34 106 52 Q 84 62 76 106 Z" fill="#4A2C22" stroke="#2A1712" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M 268 96 Q 276 34 214 52 Q 236 62 244 106 Z" fill="#4A2C22" stroke="#2A1712" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M 62 88 Q 60 52 100 60 Q 84 70 80 96 Z" fill="#F7EFE6"/>
+  <path d="M 258 88 Q 260 52 220 60 Q 236 70 240 96 Z" fill="#F7EFE6"/>
+
+  <!-- head with fluffy cheeks -->
+  <path d="M 160 74
+           C 108 74 62 104 56 158
+           C 52 190 60 214 74 232
+           L 62 238 L 80 244
+           C 100 262 128 270 160 270
+           C 192 270 220 262 240 244
+           L 258 238 L 246 232
+           C 260 214 268 190 264 158
+           C 258 104 212 74 160 74 Z"
+        fill="#E1663F" stroke="#2A1712" stroke-width="5" stroke-linejoin="round"/>
+
+  <!-- cel shadow along the right of the head -->
+  <path d="M 246 232 C 260 214 268 190 264 158 C 261 131 248 110 230 96
+           C 252 122 258 170 240 206 C 233 220 224 231 214 240 Z"
+        fill="#8E3A22" opacity="0.45"/>
+
+  <!-- white brow dots -->
+  <ellipse cx="118" cy="112" rx="15" ry="12" fill="#F7EFE6"/>
+  <ellipse cx="202" cy="112" rx="15" ry="12" fill="#F7EFE6"/>
+
+  <!-- white cheek patches -->
+  <path d="M 70 160 Q 64 216 106 236 Q 130 220 122 178 Q 100 158 70 160 Z" fill="#F7EFE6"/>
+  <path d="M 250 160 Q 256 216 214 236 Q 190 220 198 178 Q 220 158 250 160 Z" fill="#F7EFE6"/>
+
+  <!-- muzzle -->
+  <ellipse cx="160" cy="212" rx="52" ry="40" fill="#F7EFE6"/>
+
+  <!-- rust tear-stripes from eyes toward cheeks -->
+  <path d="M 106 168 Q 96 188 102 206 Q 112 192 116 176 Z" fill="#B14A2C" opacity="0.85"/>
+  <path d="M 214 168 Q 224 188 218 206 Q 208 192 204 176 Z" fill="#B14A2C" opacity="0.85"/>
+
+  <!-- big anime eyes -->
+  <ellipse cx="122" cy="156" rx="18" ry="22" fill="#1A0F0A"/>
+  <ellipse cx="198" cy="156" rx="18" ry="22" fill="#1A0F0A"/>
+  <ellipse cx="122" cy="157" rx="15" ry="19" fill="url(#iris)"/>
+  <ellipse cx="198" cy="157" rx="15" ry="19" fill="url(#iris)"/>
+  <circle cx="116" cy="148" r="6" fill="#FFFFFF" opacity="0.95"/>
+  <circle cx="192" cy="148" r="6" fill="#FFFFFF" opacity="0.95"/>
+  <circle cx="128" cy="166" r="2.6" fill="#FFFFFF" opacity="0.8"/>
+  <circle cx="204" cy="166" r="2.6" fill="#FFFFFF" opacity="0.8"/>
+
+  <!-- nose + mouth -->
+  <path d="M 149 196 Q 160 190 171 196 Q 168 210 160 212 Q 152 210 149 196 Z"
+        fill="#2A1712"/>
+  <path d="M 160 212 L 160 222 M 160 222 Q 150 232 141 224 M 160 222 Q 170 232 179 224"
+        fill="none" stroke="#2A1712" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- blush -->
+  <ellipse cx="99" cy="206" rx="13" ry="7" fill="#F2A08C" opacity="0.55"/>
+  <ellipse cx="221" cy="206" rx="13" ry="7" fill="#F2A08C" opacity="0.55"/>
+</svg>
