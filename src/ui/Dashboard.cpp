@@ -1,5 +1,7 @@
 #include "Dashboard.h"
 #include <ArduinoJson.h>
+#include <cmath>
+#include <cstring>
 #include "board_pins.h"
 #include "../themes/ThemeManager.h"
 #include "../settings/SettingsManager.h"
@@ -130,17 +132,31 @@ void Dashboard::buildWidgets(const ThemeManager& theme, const SettingsManager& s
 
         w->create(_grid, theme);
 
-        // Tapping the "last updated" card triggers a manual refresh.
         InfoWidget* info = w->asInfo();
         if (info && info->kind() == InfoWidget::Kind::Updated) {
+            // Tapping the "last updated" card triggers a manual refresh.
             lv_obj_t* card = info->root();
             lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
-            // Visible press feedback so a registered tap is unmistakable.
             lv_obj_set_style_border_color(card, theme.palette().accent, LV_STATE_PRESSED);
             lv_obj_set_style_border_width(card, 2, LV_STATE_PRESSED);
             lv_obj_add_event_cb(card, [](lv_event_t* e) {
                 static_cast<Dashboard*>(lv_event_get_user_data(e))->onUpdatedCardClicked();
             }, LV_EVENT_SHORT_CLICKED, this);
+        } else if (!info) {
+            // Metric card: tap to open its full-screen trend chart.
+            int me = metricEnumForId(item["metric"] | "");
+            if (me >= 0) {
+                lv_obj_t* card = w->root();
+                lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
+                lv_obj_set_user_data(card, (void*)(intptr_t)me);
+                lv_obj_set_style_border_color(card, theme.palette().accent, LV_STATE_PRESSED);
+                lv_obj_set_style_border_width(card, 2, LV_STATE_PRESSED);
+                lv_obj_add_event_cb(card, [](lv_event_t* e) {
+                    auto* self = static_cast<Dashboard*>(lv_event_get_user_data(e));
+                    lv_obj_t* c = (lv_obj_t*)lv_event_get_current_target(e);
+                    self->showChart((int)(intptr_t)lv_obj_get_user_data(c));
+                }, LV_EVENT_SHORT_CLICKED, this);
+            }
         }
         _widgets.push_back(std::move(w));
     }
@@ -202,10 +218,200 @@ void Dashboard::onUpdatedCardClicked() {
 
 void Dashboard::updateReading(const AirGradientReading& r, const AppSettings& s,
                               const ThemeManager& theme) {
+    _tempF = s.tempFahrenheit;
     for (auto& w : _widgets) w->update(r, s, theme);
     if (r.valid && r.deviceName.length()) {
         lv_label_set_text(_titleLbl, r.deviceName.c_str());
     }
+    // Live-update a chart that happens to be open.
+    if (_chartOverlay && !lv_obj_has_flag(_chartOverlay, LV_OBJ_FLAG_HIDDEN)) {
+        refreshChart();
+    }
+}
+
+// ---------------------- trend chart overlay ----------------------
+
+int Dashboard::metricEnumForId(const char* id) {
+    if (!strcmp(id, "pm25")) return (int)Metric::Pm25;
+    if (!strcmp(id, "co2")) return (int)Metric::Co2;
+    if (!strcmp(id, "temp")) return (int)Metric::Temp;
+    if (!strcmp(id, "humidity")) return (int)Metric::Humidity;
+    if (!strcmp(id, "tvoc")) return (int)Metric::Tvoc;
+    if (!strcmp(id, "nox")) return (int)Metric::Nox;
+    if (!strcmp(id, "aqi")) return (int)Metric::Aqi;
+    return -1;
+}
+
+struct ChartMeta { const char* name; const char* unit; uint8_t decimals; };
+static const ChartMeta CHART_META[(int)Metric::Count] = {
+    {"PM2.5", "ug/m3", 1}, {"CO2", "ppm", 0}, {"Temperature", "C", 1},
+    {"Humidity", "%", 0}, {"TVOC", "index", 0}, {"NOx", "index", 0},
+    {"US AQI", "", 0},
+};
+
+static const struct { const char* lbl; uint16_t min; } DURATIONS[4] = {
+    {"1h", 60}, {"6h", 360}, {"24h", 1440}, {"All", 0},
+};
+
+void Dashboard::buildChartOverlay() {
+    if (_chartOverlay || !_theme) return;
+    const ThemePalette& p = _theme->palette();
+
+    _chartOverlay = lv_obj_create(_screen);
+    lv_obj_remove_style_all(_chartOverlay);
+    lv_obj_set_size(_chartOverlay, LCD_H_RES, LCD_V_RES);
+    lv_obj_set_pos(_chartOverlay, 0, 0);
+    lv_obj_set_style_bg_color(_chartOverlay, p.bg, 0);
+    lv_obj_set_style_bg_opa(_chartOverlay, LV_OPA_COVER, 0);
+    lv_obj_add_flag(_chartOverlay, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(_chartOverlay, LV_OBJ_FLAG_SCROLLABLE);
+    // Tap anywhere that isn't a duration button closes the chart.
+    lv_obj_add_event_cb(_chartOverlay, [](lv_event_t* e) {
+        static_cast<Dashboard*>(lv_event_get_user_data(e))->hideChart();
+    }, LV_EVENT_CLICKED, this);
+
+    _chartTitle = lv_label_create(_chartOverlay);
+    lv_obj_set_style_text_font(_chartTitle, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(_chartTitle, p.text, 0);
+    lv_obj_align(_chartTitle, LV_ALIGN_TOP_LEFT, 16, 12);
+
+    lv_obj_t* hint = lv_label_create(_chartOverlay);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(hint, p.textMuted, 0);
+    lv_label_set_text(hint, "tap chart to close");
+    lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, -16, 18);
+
+    _chartStats = lv_label_create(_chartOverlay);
+    lv_obj_set_style_text_font(_chartStats, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(_chartStats, p.textMuted, 0);
+    lv_obj_align(_chartStats, LV_ALIGN_TOP_LEFT, 16, 46);
+
+    _chart = lv_chart_create(_chartOverlay);
+    lv_obj_set_size(_chart, LCD_H_RES - 48, LCD_V_RES - 148);
+    lv_obj_align(_chart, LV_ALIGN_TOP_MID, 0, 78);
+    lv_chart_set_type(_chart, LV_CHART_TYPE_LINE);
+    lv_chart_set_div_line_count(_chart, 5, 6);
+    lv_chart_set_update_mode(_chart, LV_CHART_UPDATE_MODE_SHIFT);
+    lv_obj_set_style_bg_color(_chart, p.card, 0);
+    lv_obj_set_style_border_color(_chart, p.cardBorder, 0);
+    lv_obj_set_style_border_width(_chart, 1, 0);
+    lv_obj_set_style_line_color(_chart, p.cardBorder, LV_PART_MAIN);  // div lines
+    lv_obj_set_style_size(_chart, 0, 0, LV_PART_INDICATOR);           // no point dots
+    // Taps on the chart fall through to the overlay (which closes it).
+    lv_obj_remove_flag(_chart, LV_OBJ_FLAG_CLICKABLE);
+    _chartSeries = lv_chart_add_series(_chart, p.accent, LV_CHART_AXIS_PRIMARY_Y);
+
+    // Duration buttons along the bottom.
+    for (int i = 0; i < 4; i++) {
+        lv_obj_t* b = lv_button_create(_chartOverlay);
+        lv_obj_set_size(b, 96, 44);
+        lv_obj_align(b, LV_ALIGN_BOTTOM_MID, (i - 2) * 108 + 54, -10);
+        lv_obj_set_style_shadow_width(b, 0, 0);
+        lv_obj_set_user_data(b, (void*)(intptr_t)DURATIONS[i].min);
+        lv_obj_t* lbl = lv_label_create(b);
+        lv_label_set_text(lbl, DURATIONS[i].lbl);
+        lv_obj_center(lbl);
+        lv_obj_add_event_cb(b, [](lv_event_t* e) {
+            auto* self = static_cast<Dashboard*>(lv_event_get_user_data(e));
+            lv_obj_t* btn = (lv_obj_t*)lv_event_get_current_target(e);
+            self->_chartWindowMin = (uint16_t)(intptr_t)lv_obj_get_user_data(btn);
+            self->highlightDurationButtons();
+            self->refreshChart();
+        }, LV_EVENT_CLICKED, this);
+        _durBtns[i] = b;
+    }
+}
+
+void Dashboard::highlightDurationButtons() {
+    if (!_theme) return;
+    const ThemePalette& p = _theme->palette();
+    for (int i = 0; i < 4; i++) {
+        if (!_durBtns[i]) continue;
+        bool active = DURATIONS[i].min == _chartWindowMin;
+        lv_obj_set_style_bg_color(_durBtns[i], active ? p.accent : p.card, 0);
+        lv_obj_set_style_border_width(_durBtns[i], 1, 0);
+        lv_obj_set_style_border_color(_durBtns[i], p.cardBorder, 0);
+    }
+}
+
+void Dashboard::showChart(int metric) {
+    if (!_history || metric < 0 || metric >= (int)Metric::Count) return;
+    buildChartOverlay();
+    _chartMetric = metric;
+    highlightDurationButtons();
+    refreshChart();
+    lv_obj_remove_flag(_chartOverlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(_chartOverlay);
+}
+
+void Dashboard::hideChart() {
+    if (_chartOverlay) lv_obj_add_flag(_chartOverlay, LV_OBJ_FLAG_HIDDEN);
+}
+
+void Dashboard::refreshChart() {
+    if (!_chart || _chartMetric < 0 || !_history) return;
+
+    static float vals[100];
+    static uint32_t ages[100];
+    uint32_t nowMs = millis();
+    uint32_t durMs = (uint32_t)_chartWindowMin * 60000UL;
+    int n = _history->query((Metric)_chartMetric, durMs, nowMs, 100, vals, ages);
+
+    const ChartMeta& cm = CHART_META[_chartMetric];
+    bool isTemp = ((Metric)_chartMetric == Metric::Temp);
+    bool asF = isTemp && _tempF;
+    auto conv = [&](float v) { return asF ? v * 9.0f / 5.0f + 32.0f : v; };
+
+    // Stats over the non-NaN samples.
+    float mn = 1e9f, mx = -1e9f, sum = 0;
+    int cnt = 0;
+    for (int i = 0; i < n; i++) {
+        if (isnan(vals[i])) continue;
+        float v = conv(vals[i]);
+        if (v < mn) mn = v;
+        if (v > mx) mx = v;
+        sum += v;
+        cnt++;
+    }
+
+    // Plot the line (rounded to int; the cards show precise values).
+    lv_chart_set_point_count(_chart, n > 0 ? n : 1);
+    if (cnt > 0) {
+        float pad = (mx - mn) * 0.1f;
+        if (pad < 1.0f) pad = 1.0f;
+        lv_chart_set_range(_chart, LV_CHART_AXIS_PRIMARY_Y,
+                           (int32_t)floorf(mn - pad), (int32_t)ceilf(mx + pad));
+    } else {
+        lv_chart_set_range(_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 1);
+    }
+    for (int i = 0; i < n; i++) {
+        int32_t y = isnan(vals[i]) ? LV_CHART_POINT_NONE : (int32_t)lroundf(conv(vals[i]));
+        lv_chart_set_value_by_id(_chart, _chartSeries, i, y);
+    }
+    lv_chart_refresh(_chart);
+
+    // Title: "PM2.5 (ug/m3)".
+    const char* unit = asF ? "F" : cm.unit;
+    char title[48];
+    if (unit && unit[0]) snprintf(title, sizeof(title), "%s (%s)", cm.name, unit);
+    else                 snprintf(title, sizeof(title), "%s", cm.name);
+    lv_label_set_text(_chartTitle, title);
+
+    // Stats line.
+    uint32_t spanMin = _history->oldestAgeMs(nowMs) / 60000UL;
+    char stats[128];
+    if (cnt > 0) {
+        snprintf(stats, sizeof(stats),
+                 "min %.*f   max %.*f   avg %.*f      %s   %d pts",
+                 cm.decimals, mn, cm.decimals, mx, cm.decimals, sum / cnt,
+                 _chartWindowMin ? DURATIONS[_chartWindowMin == 60 ? 0 : _chartWindowMin == 360 ? 1 : 2].lbl
+                                 : "all",
+                 cnt);
+    } else {
+        snprintf(stats, sizeof(stats), "no samples yet in this window (history spans %luh)",
+                 (unsigned long)(spanMin / 60));
+    }
+    lv_label_set_text(_chartStats, stats);
 }
 
 void Dashboard::updateStatus(const String& wifiText, bool wifiAlert,

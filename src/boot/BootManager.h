@@ -11,6 +11,7 @@
 #include "../ui/BootTerminal.h"
 #include "../ui/Dashboard.h"
 #include "../ui/SettingsScreen.h"
+#include "../history/HistoryManager.h"
 
 class SettingsManager;
 class WifiManager;
@@ -51,7 +52,10 @@ private:
     BootTerminal _terminal;
     Dashboard _dashboard;
     SettingsScreen _settingsScreen;
+    HistoryManager _history;
+    uint32_t _lastHistoryAt = 0;
     bool _dashboardCreated = false;
+    bool _netStarted = false;
 
     State _state = State::Splash;
     State _stateBeforeSettings = State::Terminal;
@@ -60,5 +64,6 @@ private:
     uint32_t _lastReceivedAt = 0;
     uint32_t _lastStatusTickMs = 0;
     uint32_t _lastDebugTickMs = 0;
+    uint32_t _lastRepaintMs = 0;
     const char* _resetReason = "";   // captured once at boot
 };

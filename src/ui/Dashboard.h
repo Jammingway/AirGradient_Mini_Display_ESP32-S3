@@ -12,6 +12,7 @@
 #include <memory>
 #include "../widgets/Widget.h"
 #include "../widgets/InfoWidget.h"
+#include "../history/HistoryManager.h"
 
 class ThemeManager;
 class SettingsManager;
@@ -40,6 +41,9 @@ public:
     // Debug readout pinned bottom-left; empty string hides it.
     void setDebugLine(const String& text);
 
+    // Source of trend data for the tap-to-open charts.
+    void setHistory(HistoryManager* h) { _history = h; }
+
     lv_obj_t* screen() { return _screen; }
 
 private:
@@ -48,6 +52,14 @@ private:
     void flowLayout();
 
     void onUpdatedCardClicked();
+
+    // Full-screen trend chart overlay.
+    void buildChartOverlay();
+    void showChart(int metric);
+    void hideChart();
+    void refreshChart();
+    void highlightDurationButtons();
+    static int metricEnumForId(const char* id);
 
     lv_obj_t* _screen = nullptr;
     lv_obj_t* _grid = nullptr;
@@ -59,6 +71,18 @@ private:
     std::vector<std::unique_ptr<Widget>> _widgets;
     ActionCallback _refreshCb;
     ActionCallback _settingsCb;
+
+    // Trend chart overlay state.
+    HistoryManager* _history = nullptr;
+    bool _tempF = false;
+    lv_obj_t* _chartOverlay = nullptr;
+    lv_obj_t* _chart = nullptr;
+    lv_chart_series_t* _chartSeries = nullptr;
+    lv_obj_t* _chartTitle = nullptr;
+    lv_obj_t* _chartStats = nullptr;
+    lv_obj_t* _durBtns[4] = {};
+    int _chartMetric = -1;
+    uint16_t _chartWindowMin = 360;  // 6h default
 
     static constexpr int TOP_BAR_H = 56;
     static constexpr int GAP = 12;

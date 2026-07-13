@@ -8,7 +8,9 @@
 // ---------- 16-bit parallel RGB LCD (ST7262 panel, 800x480) ----------
 #define LCD_H_RES 800
 #define LCD_V_RES 480
-#define LCD_PIXEL_CLOCK_HZ (16 * 1000 * 1000)
+// 12 MHz (was 16): more pixel setup time to curb faint edge ghosting near
+// high-contrast text. ~29 Hz refresh — imperceptible on a static LCD.
+#define LCD_PIXEL_CLOCK_HZ (12 * 1000 * 1000)
 
 #define LCD_PIN_HSYNC 46
 #define LCD_PIN_VSYNC 3

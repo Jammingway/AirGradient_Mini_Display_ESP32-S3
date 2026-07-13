@@ -12,9 +12,10 @@ void AirGradientClient::begin(SettingsManager& settings, WifiManager& wifi) {
     _settings = &settings;
     _wifi = &wifi;
     _mutex = xSemaphoreCreateMutex();
-    // 16KB stack: TLS handshake + JSON parsing headroom. Runs on core 0,
-    // away from the LVGL/loop core.
-    xTaskCreatePinnedToCore(taskEntry, "ag_api", 16384, this, 1, &_task, 0);
+    // 24KB stack: HTTP + JSON parsing headroom (a per-poll stack overflow
+    // here would panic-reset the whole chip). Runs on core 0, away from the
+    // LVGL/loop core.
+    xTaskCreatePinnedToCore(taskEntry, "ag_api", 24576, this, 1, &_task, 0);
 }
 
 bool AirGradientClient::latest(AirGradientReading& out) const {

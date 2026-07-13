@@ -40,6 +40,8 @@ void BootManager::begin(SettingsManager& settings, WifiManager& wifi, AirGradien
     _resetReason = resetReasonStr(esp_reset_reason());
     LOG_I("boot", "last reset reason: %s", _resetReason);
 
+    _history.begin();  // PSRAM ring for trend charts
+
     // Terminal exists from the start so early WiFi events land in it.
     _terminal.create(theme);
     _terminal.pushLine("display init .......... OK");
@@ -69,6 +71,15 @@ void BootManager::begin(SettingsManager& settings, WifiManager& wifi, AirGradien
 void BootManager::enterTerminal(bool deletePrev) {
     _state = State::Terminal;
     _terminal.load(deletePrev);
+
+    // Start networking now (once), after the splash — separating the WiFi
+    // inrush from the boot animation's render current to avoid brownout.
+    if (!_netStarted) {
+        _netStarted = true;
+        _wifi->begin(*_settings);
+        _api->begin(*_settings, *_wifi);
+    }
+
     if (!_settings->isConfigured()) {
         _terminal.pushLine(_settings->get().endpoint.length() == 0 && _settings->get().ssid1.length() > 0
                                ? "no endpoint set"
@@ -79,6 +90,7 @@ void BootManager::enterTerminal(bool deletePrev) {
 
 void BootManager::enterDashboard() {
     if (!_dashboardCreated) {
+        _dashboard.setHistory(&_history);
         _dashboard.create(*_theme, *_settings);
         _dashboard.onRefresh([this]() { _api->requestNow(); });
         _dashboard.onSettings([this]() { openSettings(); });
@@ -140,6 +152,15 @@ void BootManager::onSettingsClosed(const SettingsScreen::Result& res) {
 void BootManager::tick() {
     handleSleep();
     updateDebug();
+
+    // Record every new reading into history (any screen), for the charts.
+    {
+        AirGradientReading r;
+        if (_api->latest(r) && r.valid && r.receivedAtMs != _lastHistoryAt) {
+            _lastHistoryAt = r.receivedAtMs;
+            _history.add(r);
+        }
+    }
 
     switch (_state) {
         case State::Splash:

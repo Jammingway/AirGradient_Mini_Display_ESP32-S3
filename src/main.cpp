@@ -52,15 +52,14 @@ void setup() {
     if (!lvglPort.begin(display, touch)) fatal("lvgl init");
     lvglPort.setBrightness(settings.get().brightness);
 
-    // UI first: the splash appears while WiFi negotiates in the background.
+    // UI first. BootManager starts WiFi/API itself once the splash finishes,
+    // so the WiFi power-up doesn't stack on top of the boot animation's
+    // current draw (that overlap browned out the board and double-booted it).
     bootManager.begin(settings, wifi, api, theme, lvglPort, display, touch);
 
     // First frame before the backlight turns on, so there is no white flash.
     lv_timer_handler();
     display.setBacklight(true);
-
-    wifi.begin(settings);
-    api.begin(settings, wifi);
 
     LOG_I("boot", "setup complete, free heap: %u, psram: %u",
           ESP.getFreeHeap(), ESP.getFreePsram());

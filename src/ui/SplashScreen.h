@@ -43,10 +43,13 @@ private:
     int _winCount = 0;
     size_t _typed = 0;
 
-    static constexpr uint32_t TICK_MS = 40;
+    static constexpr uint32_t TICK_MS = 55;
     static constexpr uint32_t LOGO_MS = 2200;    // hold the logo before the "crash"
-    static constexpr int SPAWN_PER_TICK = 2;
-    static constexpr int MAX_WINDOWS = 44;
+    static constexpr int SPAWN_PER_TICK = 1;
+    // Kept modest: the cascade repeatedly invalidates the whole RGB panel,
+    // and a heavier storm coincided with WiFi startup current, browning out
+    // the board on boot. 20 windows keeps the effect without the loop.
+    static constexpr int MAX_WINDOWS = 20;
     static constexpr uint32_t WOPR_HOLD_MS = 1400;  // after the line finishes typing
     static constexpr const char* WOPR_TEXT =
         "Greetings Professor Falken.\n\nShall we play a game?";
