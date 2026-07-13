@@ -1,4 +1,5 @@
 #include "BootTerminal.h"
+#include "board_pins.h"
 #include "../themes/ThemeManager.h"
 
 static constexpr int LINE_H = 26;
@@ -29,9 +30,19 @@ void BootTerminal::create(const ThemeManager& theme) {
     _hint = lv_label_create(_screen);
     lv_obj_set_style_text_font(_hint, &lv_font_unscii_16, 0);
     lv_obj_set_style_text_color(_hint, p.terminalGreen, 0);
-    lv_label_set_text(_hint, "[ TAP SCREEN TO CONFIGURE ]");
+    lv_label_set_text(_hint, "[tap anywhere to configure]");
     lv_obj_align(_hint, LV_ALIGN_BOTTOM_MID, 0, -32);
     lv_obj_add_flag(_hint, LV_OBJ_FLAG_HIDDEN);
+
+    // Dim-green diagnostics line, bottom-left; shown only when debug is on.
+    _debugLbl = lv_label_create(_screen);
+    lv_obj_set_style_text_font(_debugLbl, &lv_font_unscii_8, 0);
+    lv_obj_set_style_text_color(_debugLbl, lv_color_mix(p.terminalGreen, lv_color_black(), 150), 0);
+    lv_label_set_long_mode(_debugLbl, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(_debugLbl, LCD_H_RES - 2 * PAD);
+    lv_obj_align(_debugLbl, LV_ALIGN_BOTTOM_LEFT, PAD, -6);
+    lv_label_set_text(_debugLbl, "");
+    lv_obj_add_flag(_debugLbl, LV_OBJ_FLAG_HIDDEN);
 
     _blinkTimer = lv_timer_create(blinkTimerCb, 530, this);
 
@@ -40,7 +51,8 @@ void BootTerminal::create(const ThemeManager& theme) {
         if (self->_tap) self->_tap();
     }, LV_EVENT_CLICKED, this);
 
-    _lines[0] = "> ";
+    // First line is the standing invitation to open setup.
+    _lines[0] = "[tap anywhere to configure]";
     _count = 1;
     refresh();
 }
@@ -67,6 +79,15 @@ void BootTerminal::setStatus(const String& msg) {
 void BootTerminal::showConfigHint(bool show) {
     if (show) lv_obj_remove_flag(_hint, LV_OBJ_FLAG_HIDDEN);
     else      lv_obj_add_flag(_hint, LV_OBJ_FLAG_HIDDEN);
+}
+
+void BootTerminal::setDebugLine(const String& text) {
+    if (text.length() == 0) {
+        lv_obj_add_flag(_debugLbl, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_label_set_text(_debugLbl, text.c_str());
+    lv_obj_remove_flag(_debugLbl, LV_OBJ_FLAG_HIDDEN);
 }
 
 void BootTerminal::refresh() {

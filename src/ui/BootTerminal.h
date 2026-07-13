@@ -26,6 +26,8 @@ public:
     void setStatus(const String& msg);
     // Show/hide the "TAP TO CONFIGURE" hint.
     void showConfigHint(bool show);
+    // Debug readout pinned at the bottom; empty string hides it.
+    void setDebugLine(const String& text);
 
     void onTap(TapCallback cb) { _tap = std::move(cb); }
     lv_obj_t* screen() { return _screen; }
@@ -34,12 +36,13 @@ private:
     void refresh();
     static void blinkTimerCb(lv_timer_t* t);
 
-    static constexpr int MAX_LINES = 12;
+    static constexpr int MAX_LINES = 11;
 
     lv_obj_t* _screen = nullptr;
     lv_obj_t* _lineLabels[MAX_LINES] = {};
     lv_obj_t* _cursor = nullptr;
     lv_obj_t* _hint = nullptr;
+    lv_obj_t* _debugLbl = nullptr;
     lv_timer_t* _blinkTimer = nullptr;
 
     String _lines[MAX_LINES];

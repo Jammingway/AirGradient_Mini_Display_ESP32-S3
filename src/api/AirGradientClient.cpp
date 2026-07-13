@@ -38,29 +38,34 @@ void AirGradientClient::taskLoop() {
         // Sleep until the next poll is due, or a manual refresh pokes us.
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(intervalMs));
 
+        // Snapshot settings once per cycle (thread-safe copy). Never read
+        // the live settings from this task — the UI thread rewrites them.
+        AppSettings s = _settings->snapshot();
+
         if (!_wifi->isConnected()) {
             _lastError = ApiError::NoNetwork;
             continue;
         }
-        if (_settings->get().apiKey.length() == 0) {
-            _lastError = ApiError::AuthFailed;
+        // Token is optional (local endpoints); only the endpoint is required.
+        if (s.endpoint.length() == 0) {
+            _lastError = ApiError::BadResponse;
             continue;
         }
 
         // Each poll cycle makes up to retryCount attempts, retryDelaySec
-        // apart (user-configurable in Settings -> API).
-        uint8_t attempts = max<uint8_t>(1, _settings->get().retryCount);
-        uint16_t delaySec = max<uint16_t>(1, _settings->get().retryDelaySec);
+        // apart (user-configurable in Settings -> Endpoint).
+        uint8_t attempts = max<uint8_t>(1, s.retryCount);
+        uint16_t delaySec = max<uint16_t>(1, s.retryDelaySec);
         for (uint8_t attempt = 1; attempt <= attempts; attempt++) {
             _lastAttemptMs = millis();
-            if (fetchOnce()) {
+            if (fetchOnce(s)) {
                 _failures = 0;
                 _lastError = ApiError::None;
                 break;
             }
             _failures = _failures + 1;
             if (attempt < attempts) {
-                LOG_W("api", "attempt %u/%u failed — retrying in %u s",
+                LOG_W("api", "attempt %u/%u failed - retrying in %u s",
                       attempt, attempts, delaySec);
                 vTaskDelay(pdMS_TO_TICKS((uint32_t)delaySec * 1000));
                 if (!_wifi->isConnected()) {
@@ -74,25 +79,74 @@ void AirGradientClient::taskLoop() {
     }
 }
 
-bool AirGradientClient::fetchOnce() {
-    const AppSettings& s = _settings->get();
+String AirGradientClient::host() const {
+    if (!_mutex) return _host;
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    String h = _host;
+    xSemaphoreGive(_mutex);
+    return h;
+}
 
+String AirGradientClient::resolvedIp() const {
+    if (!_mutex) return _resolvedIp;
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    String ip = _resolvedIp;
+    xSemaphoreGive(_mutex);
+    return ip;
+}
+
+void AirGradientClient::setHostInfo(const String& host, const String& ip) {
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    _host = host;
+    _resolvedIp = ip;
+    xSemaphoreGive(_mutex);
+}
+
+bool AirGradientClient::fetchOnce(const AppSettings& s) {
+    // The endpoint setting is a base URL or IP (local AirGradient device,
+    // e.g. "http://192.168.1.50" or "http://airgradient_xxxx.local"); the
+    // sensor's local server exposes GET /measures/current. A full cloud URL
+    // that already contains the path is used as-is.
     String url = s.endpoint;
-    if (url.indexOf("token=") < 0) {
+    if (!url.startsWith("http")) url = "http://" + url;
+    while (url.endsWith("/")) url.remove(url.length() - 1);
+    if (url.indexOf("/measures/current") < 0) url += "/measures/current";
+    // Token is only needed by the cloud API; local endpoints skip it.
+    if (s.apiKey.length() > 0 && url.indexOf("token=") < 0) {
         url += (url.indexOf('?') >= 0) ? "&" : "?";
         url += "token=" + s.apiKey;
     }
+
+    // Extract the bare host (no scheme, no port, no path) for the status
+    // screen, and resolve it if it is a DNS name.
+    String host = url;
+    int schemeEnd = host.indexOf("://");
+    if (schemeEnd >= 0) host = host.substring(schemeEnd + 3);
+    int slash = host.indexOf('/');
+    if (slash >= 0) host = host.substring(0, slash);
+    int colon = host.indexOf(':');
+    if (colon >= 0) host = host.substring(0, colon);
+    String resolved;
+    IPAddress ip;
+    bool isLiteralIp = ip.fromString(host);
+    if (!isLiteralIp && WiFi.hostByName(host.c_str(), ip) == 1) {
+        resolved = ip.toString();
+    }
+    setHostInfo(host, resolved);
 
     HTTPClient http;
     http.setTimeout(s.timeoutSec * 1000);
     http.setConnectTimeout(s.timeoutSec * 1000);
 
-    WiFiClientSecure secureClient;
-    WiFiClient plainClient;
     bool https = url.startsWith("https");
     bool ok;
+    // Only construct the (heavier) TLS client when actually needed; local
+    // endpoints are plain HTTP, and building a WiFiClientSecure per poll
+    // wastes stack/heap.
+    WiFiClient plainClient;
+    WiFiClientSecure secureClient;
     if (https) {
-        secureClient.setInsecure();  // MVP: no cert pinning
+        secureClient.setInsecure();  // no cert pinning
         secureClient.setHandshakeTimeout(s.timeoutSec);  // seconds
         ok = http.begin(secureClient, url);
     } else {
@@ -112,7 +166,7 @@ bool AirGradientClient::fetchOnce() {
         return false;
     }
     if (code == 401 || code == 403) {
-        LOG_W("api", "auth rejected (HTTP %d) — check API key", code);
+        LOG_W("api", "auth rejected (HTTP %d) - check token", code);
         _lastError = ApiError::AuthFailed;
         http.end();
         return false;
@@ -147,17 +201,22 @@ bool AirGradientClient::parsePayload(Stream& stream, AirGradientReading& out) {
     JsonDocument filterEl;
     filterEl["locationName"] = true;
     filterEl["pm02"] = true;
-    filterEl["pm02_corrected"] = true;
+    filterEl["pm02_corrected"] = true;   // cloud API naming
+    filterEl["pm02Compensated"] = true;  // local server naming
     filterEl["rco2"] = true;
     filterEl["rco2_corrected"] = true;
     filterEl["atmp"] = true;
     filterEl["atmp_corrected"] = true;
+    filterEl["atmpCompensated"] = true;
     filterEl["rhum"] = true;
     filterEl["rhum_corrected"] = true;
+    filterEl["rhumCompensated"] = true;
     filterEl["tvocIndex"] = true;
     filterEl["noxIndex"] = true;
     filterEl["wifi"] = true;
     filterEl["timestamp"] = true;
+    filterEl["model"] = true;
+    filterEl["serialno"] = true;
 
     JsonDocument filter;
     filter[0] = filterEl;                    // array responses
@@ -184,21 +243,27 @@ bool AirGradientClient::parsePayload(Stream& stream, AirGradientReading& out) {
     }
     if (obj.isNull()) return false;
 
-    auto num = [&](const char* corrected, const char* raw) -> float {
+    // Preference order: local "Compensated" > cloud "_corrected" > raw.
+    auto num = [&](const char* compensated, const char* corrected,
+                   const char* raw) -> float {
+        if (obj[compensated].is<float>()) return obj[compensated].as<float>();
         if (obj[corrected].is<float>()) return obj[corrected].as<float>();
         if (obj[raw].is<float>()) return obj[raw].as<float>();
         return NAN;
     };
 
-    out.pm25 = num("pm02_corrected", "pm02");
-    out.co2 = num("rco2_corrected", "rco2");
-    out.temperature = num("atmp_corrected", "atmp");
-    out.humidity = num("rhum_corrected", "rhum");
+    out.pm25 = num("pm02Compensated", "pm02_corrected", "pm02");
+    out.co2 = num("rco2_corrected", "rco2", "rco2");  // no Compensated variant
+    out.temperature = num("atmpCompensated", "atmp_corrected", "atmp");
+    out.humidity = num("rhumCompensated", "rhum_corrected", "rhum");
     out.tvoc = obj["tvocIndex"] | NAN;
     out.nox = obj["noxIndex"] | NAN;
     out.aqi = aqiFromPm25(out.pm25);
     out.wifiRssi = obj["wifi"] | 0;
+    // Local payloads identify the sensor by model/serial; cloud by location.
     out.deviceName = obj["locationName"] | "";
+    if (out.deviceName.length() == 0) out.deviceName = obj["model"] | "";
+    if (out.deviceName.length() == 0) out.deviceName = obj["serialno"] | "";
     out.timestamp = obj["timestamp"] | "";
     out.receivedAtMs = millis();
     out.valid = !isnan(out.pm25) || !isnan(out.co2) || !isnan(out.temperature);

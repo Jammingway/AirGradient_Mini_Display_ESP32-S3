@@ -36,6 +36,7 @@ private:
     void onSettingsClosed(const SettingsScreen::Result& res);
     void updateDashboardStatus();
     void handleSleep();
+    void updateDebug();
     String updatedAgoText(uint32_t receivedAtMs) const;
 
     SettingsManager* _settings = nullptr;
@@ -55,6 +56,9 @@ private:
     State _state = State::Splash;
     State _stateBeforeSettings = State::Terminal;
     bool _announcedConnect = false;
+    bool _announcedTarget = false;
     uint32_t _lastReceivedAt = 0;
     uint32_t _lastStatusTickMs = 0;
+    uint32_t _lastDebugTickMs = 0;
+    const char* _resetReason = "";   // captured once at boot
 };

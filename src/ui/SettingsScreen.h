@@ -57,6 +57,9 @@ private:
     lv_obj_t* _taPass1 = nullptr;
     lv_obj_t* _taSsid2 = nullptr;
     lv_obj_t* _taPass2 = nullptr;
+    lv_obj_t* _swFallback = nullptr;      // reveals the fallback SSID/PW rows
+    lv_obj_t* _rowSsid2 = nullptr;
+    lv_obj_t* _rowPass2 = nullptr;
     // API
     lv_obj_t* _taEndpoint = nullptr;
     lv_obj_t* _taApiKey = nullptr;
@@ -69,6 +72,8 @@ private:
     lv_obj_t* _slBrightness = nullptr;
     lv_obj_t* _ddSleep = nullptr;
     lv_obj_t* _swTempF = nullptr;
+    lv_obj_t* _swDisableSplash = nullptr;
+    lv_obj_t* _swDebug = nullptr;
     // Dashboard
     static constexpr int WIDGET_COUNT = 9;
     lv_obj_t* _swWidgets[WIDGET_COUNT] = {};

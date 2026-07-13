@@ -29,6 +29,27 @@ void Dashboard::load(bool deletePrev) {
     lv_screen_load_anim(_screen, LV_SCR_LOAD_ANIM_FADE_IN, 350, 0, deletePrev);
 }
 
+void Dashboard::setDebugLine(const String& text) {
+    if (!_debugLbl) {
+        _debugLbl = lv_label_create(_screen);
+        lv_obj_set_style_text_font(_debugLbl, &lv_font_unscii_8, 0);
+        lv_obj_set_style_text_color(_debugLbl, lv_color_hex(0x33FF66), 0);
+        lv_obj_set_style_bg_color(_debugLbl, lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(_debugLbl, LV_OPA_60, 0);
+        lv_obj_set_style_pad_all(_debugLbl, 2, 0);
+        lv_label_set_long_mode(_debugLbl, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(_debugLbl, LCD_H_RES - 8);
+        lv_obj_align(_debugLbl, LV_ALIGN_BOTTOM_LEFT, 4, -2);
+    }
+    if (text.length() == 0) {
+        lv_obj_add_flag(_debugLbl, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    lv_label_set_text(_debugLbl, text.c_str());
+    lv_obj_move_foreground(_debugLbl);
+    lv_obj_remove_flag(_debugLbl, LV_OBJ_FLAG_HIDDEN);
+}
+
 void Dashboard::rebuild(const ThemeManager& theme, const SettingsManager& settings) {
     _theme = &theme;
     _widgets.clear();

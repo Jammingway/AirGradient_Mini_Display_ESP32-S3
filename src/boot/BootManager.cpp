@@ -1,4 +1,6 @@
 #include "BootManager.h"
+#include <WiFi.h>
+#include <esp_system.h>
 #include "../settings/SettingsManager.h"
 #include "../network/WifiManager.h"
 #include "../api/AirGradientClient.h"
@@ -7,6 +9,22 @@
 #include "../display/DisplayDriver.h"
 #include "../touch/GT911Touch.h"
 #include "../utils/Logger.h"
+
+static const char* resetReasonStr(esp_reset_reason_t r) {
+    switch (r) {
+        case ESP_RST_POWERON:   return "power-on";
+        case ESP_RST_EXT:       return "ext-reset";
+        case ESP_RST_SW:        return "sw-reset";
+        case ESP_RST_PANIC:     return "PANIC (crash)";
+        case ESP_RST_INT_WDT:   return "int-watchdog";
+        case ESP_RST_TASK_WDT:  return "task-watchdog";
+        case ESP_RST_WDT:       return "watchdog";
+        case ESP_RST_DEEPSLEEP: return "deep-sleep";
+        case ESP_RST_BROWNOUT:  return "BROWNOUT (power)";
+        case ESP_RST_SDIO:      return "sdio";
+        default:                return "unknown";
+    }
+}
 
 void BootManager::begin(SettingsManager& settings, WifiManager& wifi, AirGradientClient& api,
                         ThemeManager& theme, LvglPort& lvgl, DisplayDriver& display,
@@ -18,6 +36,9 @@ void BootManager::begin(SettingsManager& settings, WifiManager& wifi, AirGradien
     _lvgl = &lvgl;
     _display = &display;
     _touch = &touch;
+
+    _resetReason = resetReasonStr(esp_reset_reason());
+    LOG_I("boot", "last reset reason: %s", _resetReason);
 
     // Terminal exists from the start so early WiFi events land in it.
     _terminal.create(theme);
@@ -34,16 +55,21 @@ void BootManager::begin(SettingsManager& settings, WifiManager& wifi, AirGradien
         _terminal.showConfigHint(stalled || !_settings->isConfigured());
     });
 
-    _state = State::Splash;
-    _splash.show(theme, [this]() { enterTerminal(); });
+    // The splash can be skipped from Settings -> General.
+    if (_settings->get().disableSplash) {
+        enterTerminal();
+    } else {
+        _state = State::Splash;
+        _splash.show(theme, [this]() { enterTerminal(); });
+    }
 }
 
 void BootManager::enterTerminal() {
     _state = State::Terminal;
     _terminal.load();
     if (!_settings->isConfigured()) {
-        _terminal.pushLine(_settings->get().apiKey.length() == 0 && _settings->get().ssid1.length() > 0
-                               ? "no api token set"
+        _terminal.pushLine(_settings->get().endpoint.length() == 0 && _settings->get().ssid1.length() > 0
+                               ? "no endpoint set"
                                : "no network configured");
         _terminal.showConfigHint(true);
     }
@@ -88,8 +114,10 @@ void BootManager::onSettingsClosed(const SettingsScreen::Result& res) {
     if (res.networkChanged || res.factoryReset) {
         _terminal.pushLine("settings updated - reconnecting");
         _announcedConnect = false;
+        _announcedTarget = false;
         _wifi->restart();
     }
+    if (res.apiChanged) _announcedTarget = false;  // re-announce new target
     if (res.apiChanged) _api->requestNow();
 
     // deletePrev=true: LVGL frees the settings screen after the transition.
@@ -109,6 +137,7 @@ void BootManager::onSettingsClosed(const SettingsScreen::Result& res) {
 
 void BootManager::tick() {
     handleSleep();
+    updateDebug();
 
     switch (_state) {
         case State::Splash:
@@ -118,9 +147,21 @@ void BootManager::tick() {
         case State::Terminal: {
             if (_wifi->state() == WifiManager::State::Connected && !_announcedConnect) {
                 _announcedConnect = true;
-                _terminal.pushLine("polling airgradient api ...");
+                _terminal.pushLine("polling local api ...");
                 _terminal.showConfigHint(false);
                 _api->requestNow();
+            }
+            // Once the poll task has computed the target host/IP, show it.
+            if (_announcedConnect && !_announcedTarget) {
+                String host = _api->host();
+                if (host.length()) {
+                    _announcedTarget = true;
+                    _terminal.pushLine("  target: " + host);
+                    String ip = _api->resolvedIp();
+                    if (ip.length() && ip != host) {
+                        _terminal.pushLine("  resolved: " + ip);
+                    }
+                }
             }
             AirGradientReading r;
             if (_api->latest(r)) {
@@ -195,6 +236,44 @@ void BootManager::handleSleep() {
         LOG_I("sleep", "touch — backlight on");
         _display->setBacklight(true);
     }
+}
+
+void BootManager::updateDebug() {
+    static bool wasEnabled = false;
+    bool enabled = _settings->get().debug;
+
+    if (!enabled) {
+        if (wasEnabled) {  // just turned off: clear overlays once
+            _terminal.setDebugLine("");
+            _dashboard.setDebugLine("");
+            wasEnabled = false;
+        }
+        return;
+    }
+    wasEnabled = true;
+
+    if (millis() - _lastDebugTickMs < 1000) return;
+    _lastDebugTickMs = millis();
+
+    static const char* errNames[] = {"none", "no-net", "timeout", "auth", "bad-resp"};
+    ApiError err = _api->lastError();
+    String ip = _api->resolvedIp();
+
+    char buf[192];
+    snprintf(buf, sizeof(buf),
+             "rst=%s  heap=%uk min=%uk  psram=%uk  rssi=%d  fail=%u  err=%s%s%s",
+             _resetReason,
+             (unsigned)(ESP.getFreeHeap() / 1024),
+             (unsigned)(ESP.getMinFreeHeap() / 1024),
+             (unsigned)(ESP.getFreePsram() / 1024),
+             _wifi->rssi(),
+             (unsigned)_api->consecutiveFailures(),
+             errNames[(int)err],
+             ip.length() ? "  ip=" : "",
+             ip.c_str());
+
+    _terminal.setDebugLine(buf);
+    _dashboard.setDebugLine(buf);
 }
 
 String BootManager::updatedAgoText(uint32_t receivedAtMs) const {

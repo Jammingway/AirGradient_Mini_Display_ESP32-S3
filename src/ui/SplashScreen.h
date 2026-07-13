@@ -1,6 +1,6 @@
 /**
  * @file SplashScreen.h
- * Boot splash: anime red panda + "<syntax_error>" wordmark, then the
+ * Boot splash: anime red panda + "<jammingway>" wordmark, then the
  * artwork blanks out and control passes to the boot terminal.
  */
 #pragma once
@@ -24,6 +24,6 @@ private:
     lv_obj_t* _name = nullptr;
     DoneCallback _done;
 
-    static constexpr uint32_t HOLD_MS = 1800;
-    static constexpr uint32_t FADE_MS = 600;
+    static constexpr uint32_t HOLD_MS = 3000;
+    static constexpr uint32_t FADE_MS = 1000;
 };

@@ -18,12 +18,30 @@ const char* SettingsManager::defaultLayoutJson() {
 }
 
 bool SettingsManager::begin() {
+    _mutex = xSemaphoreCreateMutex();
     if (!_prefs.begin(NS, false)) {
         LOG_E("settings", "NVS namespace open failed");
         return false;
     }
     load();
     return true;
+}
+
+AppSettings SettingsManager::snapshot() const {
+    if (!_mutex) return _s;
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    AppSettings copy = _s;  // deep-copies Strings while writers are excluded
+    xSemaphoreGive(_mutex);
+    return copy;
+}
+
+// RAII lock around a writer's mutations to _s.
+namespace {
+struct Guard {
+    SemaphoreHandle_t m;
+    explicit Guard(SemaphoreHandle_t mtx) : m(mtx) { if (m) xSemaphoreTake(m, portMAX_DELAY); }
+    ~Guard() { if (m) xSemaphoreGive(m); }
+};
 }
 
 void SettingsManager::load() {
@@ -42,12 +60,15 @@ void SettingsManager::load() {
     _s.sleepTimeoutMin = _prefs.getUShort("sleep", 0);
     _s.tempFahrenheit = _prefs.getBool("tempF", false);
     _s.usAqi = _prefs.getBool("usAqi", true);
+    _s.disableSplash = _prefs.getBool("noSplash", false);
+    _s.debug = _prefs.getBool("debug", false);
     _s.layoutJson = _prefs.getString("layout", defaultLayoutJson());
     LOG_I("settings", "loaded (configured=%s)", isConfigured() ? "yes" : "no");
 }
 
 void SettingsManager::setNetwork(const String& ssid1, const String& pass1,
                                  const String& ssid2, const String& pass2) {
+    Guard g(_mutex);
     _s.ssid1 = ssid1; _s.pass1 = pass1;
     _s.ssid2 = ssid2; _s.pass2 = pass2;
     _prefs.putString("ssid1", ssid1);
@@ -60,7 +81,9 @@ void SettingsManager::setNetwork(const String& ssid1, const String& pass1,
 void SettingsManager::setApi(const String& endpoint, const String& apiKey,
                              uint16_t pollIntervalSec, uint16_t timeoutSec,
                              uint8_t retryCount, uint16_t retryDelaySec) {
-    _s.endpoint = endpoint.length() ? endpoint : DEFAULT_ENDPOINT;
+    Guard g(_mutex);
+    _s.endpoint = endpoint;
+    _s.endpoint.trim();
     _s.apiKey = apiKey;
     _s.pollIntervalSec = max<uint16_t>(pollIntervalSec, 15);
     _s.timeoutSec = constrain(timeoutSec, (uint16_t)3, (uint16_t)60);
@@ -77,25 +100,33 @@ void SettingsManager::setApi(const String& endpoint, const String& apiKey,
 }
 
 void SettingsManager::setGeneral(const String& theme, uint8_t brightness,
-                                 uint16_t sleepTimeoutMin, bool tempF, bool usAqi) {
+                                 uint16_t sleepTimeoutMin, bool tempF, bool usAqi,
+                                 bool disableSplash, bool debug) {
+    Guard g(_mutex);
     _s.theme = theme;
     _s.brightness = constrain(brightness, (uint8_t)20, (uint8_t)100);
     _s.sleepTimeoutMin = sleepTimeoutMin;
     _s.tempFahrenheit = tempF;
     _s.usAqi = usAqi;
+    _s.disableSplash = disableSplash;
+    _s.debug = debug;
     _prefs.putString("theme", theme);
     _prefs.putUChar("bright", _s.brightness);
     _prefs.putUShort("sleep", sleepTimeoutMin);
     _prefs.putBool("tempF", tempF);
     _prefs.putBool("usAqi", usAqi);
+    _prefs.putBool("noSplash", disableSplash);
+    _prefs.putBool("debug", debug);
 }
 
 void SettingsManager::setLayoutJson(const String& layoutJson) {
+    Guard g(_mutex);
     _s.layoutJson = layoutJson;
     _prefs.putString("layout", layoutJson);
 }
 
 void SettingsManager::factoryReset() {
+    Guard g(_mutex);
     _prefs.clear();
     load();
     LOG_W("settings", "factory reset complete");

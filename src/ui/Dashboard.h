@@ -37,6 +37,9 @@ public:
     void onRefresh(ActionCallback cb) { _refreshCb = std::move(cb); }
     void onSettings(ActionCallback cb) { _settingsCb = std::move(cb); }
 
+    // Debug readout pinned bottom-left; empty string hides it.
+    void setDebugLine(const String& text);
+
     lv_obj_t* screen() { return _screen; }
 
 private:
@@ -49,6 +52,7 @@ private:
     lv_obj_t* _grid = nullptr;
     lv_obj_t* _titleLbl = nullptr;
     lv_obj_t* _headlineLbl = nullptr;
+    lv_obj_t* _debugLbl = nullptr;
     const ThemeManager* _theme = nullptr;
 
     std::vector<std::unique_ptr<Widget>> _widgets;

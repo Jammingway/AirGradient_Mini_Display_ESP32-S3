@@ -12,13 +12,13 @@ void SplashScreen::show(const ThemeManager& theme, DoneCallback cb) {
 
     lv_obj_t* img = lv_image_create(_screen);
     lv_image_set_src(img, &panda_img);
-    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 36);
+    lv_obj_align(img, LV_ALIGN_TOP_MID, 0, 12);
 
     lv_obj_t* name = lv_label_create(_screen);
-    lv_label_set_text(name, "<syntax_error>");
+    lv_label_set_text(name, "<Jammingway presents...>");
     lv_obj_set_style_text_font(name, &lv_font_unscii_16, 0);
     lv_obj_set_style_text_color(name, p.terminalGreen, 0);
-    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 36 + 320 + 28);
+    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 12 + 400 + 18);
 
     lv_screen_load(_screen);
 

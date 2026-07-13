@@ -51,11 +51,14 @@ then press **RESET**.
 1. Power on — after the splash, the boot terminal reports
    `no network configured`. Tap the screen.
 2. **Network tab** — enter your primary SSID/password (fallback SSID optional).
-3. **API tab** — the endpoint defaults to
-   `https://api.airgradient.com/public/api/v1/locations/measures/current`;
-   paste your AirGradient API **token** (AirGradient dashboard → Place →
-   Connectivity Settings → API).
-4. Tap **← Save**. The device reconnects and loads the dashboard on the first
+3. **Endpoint tab** — enter the base URL or IP of your AirGradient sensor on
+   the local network (e.g. `http://192.168.1.50` or
+   `http://airgradient_<serial>.local`); the firmware appends
+   `/measures/current` ([local server API docs](https://github.com/airgradienthq/arduino/blob/master/docs/local-server.md)).
+   The token field stays **blank for local endpoints**; only fill it when
+   pointing at the cloud API
+   (`https://api.airgradient.com/public/api/v1/locations/measures/current`).
+4. Tap **< SAVE**. The device reconnects and loads the dashboard on the first
    successful poll.
 
 ## Project layout

@@ -70,7 +70,7 @@ void WifiManager::tick() {
                 _state = State::Connected;
                 _connectedFlag = true;
                 _retryCount = 0;
-                notify("connected: " + WiFi.localIP().toString());
+                notify("ip acquired: " + WiFi.localIP().toString());
                 LOG_I("wifi", "connected to '%s', ip=%s, rssi=%d",
                       _currentSsid.c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
             } else if (millis() - _stateSinceMs > ATTEMPT_TIMEOUT_MS) {
