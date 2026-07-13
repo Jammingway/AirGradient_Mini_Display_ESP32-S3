@@ -35,6 +35,14 @@ public:
     // Places the widget's root object into pixel space.
     void place(int originX, int originY, int cellW, int cellH, int gap);
 
+    // Direct pixel rectangle (used by the auto-flow layout, which ignores
+    // the logical grid cell and fills the whole dashboard evenly).
+    void setRect(int x, int y, int w, int h) {
+        if (!_root) return;
+        lv_obj_set_pos(_root, x, y);
+        lv_obj_set_size(_root, w, h);
+    }
+
 protected:
     // Standard card container used by all widgets.
     lv_obj_t* makeCard(lv_obj_t* parent, const ThemePalette& p);

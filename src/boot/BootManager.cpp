@@ -60,13 +60,15 @@ void BootManager::begin(SettingsManager& settings, WifiManager& wifi, AirGradien
         enterTerminal();
     } else {
         _state = State::Splash;
-        _splash.show(theme, [this]() { enterTerminal(); });
+        // deletePrev=true frees the splash (and all its cascade objects)
+        // once the transition completes.
+        _splash.show(theme, [this]() { enterTerminal(true); });
     }
 }
 
-void BootManager::enterTerminal() {
+void BootManager::enterTerminal(bool deletePrev) {
     _state = State::Terminal;
-    _terminal.load();
+    _terminal.load(deletePrev);
     if (!_settings->isConfigured()) {
         _terminal.pushLine(_settings->get().endpoint.length() == 0 && _settings->get().ssid1.length() > 0
                                ? "no endpoint set"
@@ -169,21 +171,28 @@ void BootManager::tick() {
                 enterDashboard();
                 break;
             }
-            // Surface API failures while still on the terminal.
+            // Surface API failures (with the real transport reason) while
+            // still on the terminal; re-show when the reason text changes.
             static ApiError lastShown = ApiError::None;
+            static String lastDetail;
             ApiError err = _api->lastError();
-            if (err != lastShown && err != ApiError::None && err != ApiError::NoNetwork) {
+            String detail = _api->lastErrorText();
+            if ((err != lastShown || detail != lastDetail) &&
+                err != ApiError::None && err != ApiError::NoNetwork) {
                 lastShown = err;
+                lastDetail = detail;
                 switch (err) {
                     case ApiError::AuthFailed:
-                        _terminal.pushLine("api auth failed - check token");
+                        _terminal.pushLine("auth failed - check token");
                         _terminal.showConfigHint(true);
                         break;
                     case ApiError::Timeout:
-                        _terminal.pushLine("api timeout - retrying");
+                        _terminal.pushLine("cannot reach sensor: " +
+                                           (detail.length() ? detail : String("timeout")));
                         break;
                     default:
-                        _terminal.pushLine("api error - retrying");
+                        _terminal.pushLine("api error: " +
+                                           (detail.length() ? detail : String("bad response")));
                         break;
                 }
             }
@@ -255,22 +264,38 @@ void BootManager::updateDebug() {
     if (millis() - _lastDebugTickMs < 1000) return;
     _lastDebugTickMs = millis();
 
-    static const char* errNames[] = {"none", "no-net", "timeout", "auth", "bad-resp"};
-    ApiError err = _api->lastError();
-    String ip = _api->resolvedIp();
+    String detail = _api->lastErrorText();  // real transport reason
+    String url = _api->lastUrl();           // exact URL being requested
+    String sensor = _api->resolvedIp();     // sensor IP (resolved or literal)
+    if (sensor.length() == 0) sensor = _api->host();
 
-    char buf[192];
+    // The display's own network identity — compare the subnet against the
+    // sensor's to catch a wrong-SSID / VLAN / isolation mismatch, which is
+    // the usual cause of "connection refused" from a same-subnet host.
+    String ssid = WiFi.SSID();
+    String me   = WiFi.localIP().toString();
+    String gw   = WiFi.gatewayIP().toString();
+    String mask = WiFi.subnetMask().toString();
+    String dns  = WiFi.dnsIP().toString();
+
+    char buf[480];
     snprintf(buf, sizeof(buf),
-             "rst=%s  heap=%uk min=%uk  psram=%uk  rssi=%d  fail=%u  err=%s%s%s",
+             "rst=%s heap=%uk min=%uk psram=%uk\n"
+             "ssid=%s rssi=%d  me=%s gw=%s\n"
+             "mask=%s dns=%s\n"
+             "GET %s\n"
+             "sensor=%s fail=%u err=%s",
              _resetReason,
              (unsigned)(ESP.getFreeHeap() / 1024),
              (unsigned)(ESP.getMinFreeHeap() / 1024),
              (unsigned)(ESP.getFreePsram() / 1024),
-             _wifi->rssi(),
+             ssid.length() ? ssid.c_str() : "-", _wifi->rssi(),
+             me.c_str(), gw.c_str(),
+             mask.c_str(), dns.c_str(),
+             url.length() ? url.c_str() : "(none yet)",
+             sensor.length() ? sensor.c_str() : "-",
              (unsigned)_api->consecutiveFailures(),
-             errNames[(int)err],
-             ip.length() ? "  ip=" : "",
-             ip.c_str());
+             detail.length() ? detail.c_str() : "-");
 
     _terminal.setDebugLine(buf);
     _dashboard.setDebugLine(buf);

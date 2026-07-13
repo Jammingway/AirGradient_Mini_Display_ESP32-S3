@@ -5,8 +5,11 @@
 #include "../utils/Logger.h"
 #include "esp_heap_caps.h"
 
-// Two partial draw buffers in internal DMA-capable RAM (40 lines each).
-static constexpr size_t DRAW_BUF_LINES = 40;
+// Two partial draw buffers in internal DMA-capable RAM. 20 lines each
+// (2 x ~31 KB) instead of 40: partial rendering is unaffected, but it frees
+// ~64 KB of internal heap for WiFi/HTTP — without that headroom a few failed
+// connections fragmented the heap into a panic.
+static constexpr size_t DRAW_BUF_LINES = 20;
 static constexpr size_t DRAW_BUF_BYTES = LCD_H_RES * DRAW_BUF_LINES * 2;
 
 bool LvglPort::begin(DisplayDriver& display, GT911Touch& touch) {

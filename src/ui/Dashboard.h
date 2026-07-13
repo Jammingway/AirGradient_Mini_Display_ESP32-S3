@@ -45,6 +45,7 @@ public:
 private:
     void buildTopBar(const ThemeManager& theme);
     void buildWidgets(const ThemeManager& theme, const SettingsManager& settings);
+    void flowLayout();
 
     void onUpdatedCardClicked();
 

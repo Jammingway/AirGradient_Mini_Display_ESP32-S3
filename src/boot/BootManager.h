@@ -30,7 +30,7 @@ public:
 private:
     enum class State : uint8_t { Splash, Terminal, Dashboard, Settings };
 
-    void enterTerminal();
+    void enterTerminal(bool deletePrev = false);
     void enterDashboard();
     void openSettings();
     void onSettingsClosed(const SettingsScreen::Result& res);

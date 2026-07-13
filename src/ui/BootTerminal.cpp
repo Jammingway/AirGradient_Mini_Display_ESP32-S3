@@ -21,6 +21,11 @@ void BootTerminal::create(const ThemeManager& theme) {
         lv_label_set_text(lbl, "");
         _lineLabels[i] = lbl;
     }
+    // Line 0 is the standing "[tap anywhere to configure]" header: centered
+    // across the full width and pinned (the log scrolls beneath it).
+    lv_obj_set_width(_lineLabels[0], LCD_H_RES);
+    lv_obj_set_style_text_align(_lineLabels[0], LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(_lineLabels[0], 0, PAD);
 
     _cursor = lv_label_create(_screen);
     lv_obj_set_style_text_font(_cursor, &lv_font_unscii_16, 0);
@@ -36,7 +41,7 @@ void BootTerminal::create(const ThemeManager& theme) {
 
     // Dim-green diagnostics line, bottom-left; shown only when debug is on.
     _debugLbl = lv_label_create(_screen);
-    lv_obj_set_style_text_font(_debugLbl, &lv_font_unscii_8, 0);
+    lv_obj_set_style_text_font(_debugLbl, &lv_font_unscii_16, 0);
     lv_obj_set_style_text_color(_debugLbl, lv_color_mix(p.terminalGreen, lv_color_black(), 150), 0);
     lv_label_set_long_mode(_debugLbl, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(_debugLbl, LCD_H_RES - 2 * PAD);
@@ -62,8 +67,8 @@ void BootTerminal::load(bool deletePrev) {
 }
 
 void BootTerminal::pushLine(const String& msg) {
-    if (_count == MAX_LINES) {  // scroll up
-        for (int i = 1; i < MAX_LINES; i++) _lines[i - 1] = _lines[i];
+    if (_count == MAX_LINES) {  // scroll the log, keeping the pinned header
+        for (int i = 2; i < MAX_LINES; i++) _lines[i - 1] = _lines[i];
         _count--;
     }
     _lines[_count++] = "> " + msg;
@@ -94,10 +99,16 @@ void BootTerminal::refresh() {
     for (int i = 0; i < MAX_LINES; i++) {
         lv_label_set_text(_lineLabels[i], i < _count ? _lines[i].c_str() : "");
     }
-    // Cursor sits right after the last character of the active line.
-    lv_obj_update_layout(_lineLabels[_count - 1]);
-    int w = lv_obj_get_width(_lineLabels[_count - 1]);
-    lv_obj_set_pos(_cursor, PAD + w + 6, PAD + (_count - 1) * LINE_H);
+    int last = _count - 1;
+    if (last <= 0) {
+        // Only the centered header is showing; blink at the first log row.
+        lv_obj_set_pos(_cursor, PAD, PAD + LINE_H);
+        return;
+    }
+    // Cursor sits right after the last character of the active log line.
+    lv_obj_update_layout(_lineLabels[last]);
+    int w = lv_obj_get_width(_lineLabels[last]);
+    lv_obj_set_pos(_cursor, PAD + w + 6, PAD + last * LINE_H);
 }
 
 void BootTerminal::blinkTimerCb(lv_timer_t* t) {

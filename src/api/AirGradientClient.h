@@ -38,6 +38,11 @@ public:
     // when the host is a DNS name. Thread-safe copies for the status screen.
     String host() const;
     String resolvedIp() const;
+    // Human-readable text of the last transport error (e.g. "connection
+    // refused", "read Timeout"); empty after a success.
+    String lastErrorText() const;
+    // The exact, fully-built URL of the most recent attempt (for debug).
+    String lastUrl() const;
 
     // Ask the poll task to fetch immediately (manual refresh).
     void requestNow();
@@ -48,6 +53,8 @@ private:
     bool fetchOnce(const AppSettings& s);
     bool parsePayload(class Stream& stream, AirGradientReading& out);
     void setHostInfo(const String& host, const String& ip);
+    void setLastErr(const String& text);
+    void setUrl(const String& url);
 
     SettingsManager* _settings = nullptr;
     WifiManager* _wifi = nullptr;
@@ -57,6 +64,8 @@ private:
     AirGradientReading _reading;         // guarded by _mutex
     String _host;                        // guarded by _mutex
     String _resolvedIp;                  // guarded by _mutex
+    String _lastHttpErr;                 // guarded by _mutex
+    String _lastUrl;                     // guarded by _mutex
     volatile ApiError _lastError = ApiError::None;
     volatile uint32_t _lastAttemptMs = 0;
     volatile uint32_t _failures = 0;

@@ -1,4 +1,5 @@
 #include "AirGradientClient.h"
+#include <memory>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -57,6 +58,14 @@ void AirGradientClient::taskLoop() {
         uint8_t attempts = max<uint8_t>(1, s.retryCount);
         uint16_t delaySec = max<uint16_t>(1, s.retryDelaySec);
         for (uint8_t attempt = 1; attempt <= attempts; attempt++) {
+            // Safety net: never let a leak/fragmentation on the failure path
+            // run the heap to zero and panic — skip the poll and back off.
+            if (ESP.getFreeHeap() < 45000) {
+                LOG_W("api", "low heap (%u B) - skipping poll", ESP.getFreeHeap());
+                setLastErr("low heap - skipped");
+                _lastError = ApiError::BadResponse;
+                break;
+            }
             _lastAttemptMs = millis();
             if (fetchOnce(s)) {
                 _failures = 0;
@@ -102,20 +111,56 @@ void AirGradientClient::setHostInfo(const String& host, const String& ip) {
     xSemaphoreGive(_mutex);
 }
 
+String AirGradientClient::lastErrorText() const {
+    if (!_mutex) return _lastHttpErr;
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    String t = _lastHttpErr;
+    xSemaphoreGive(_mutex);
+    return t;
+}
+
+void AirGradientClient::setLastErr(const String& text) {
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    _lastHttpErr = text;
+    xSemaphoreGive(_mutex);
+}
+
+String AirGradientClient::lastUrl() const {
+    if (!_mutex) return _lastUrl;
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    String u = _lastUrl;
+    xSemaphoreGive(_mutex);
+    return u;
+}
+
+void AirGradientClient::setUrl(const String& url) {
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    _lastUrl = url;
+    xSemaphoreGive(_mutex);
+}
+
 bool AirGradientClient::fetchOnce(const AppSettings& s) {
     // The endpoint setting is a base URL or IP (local AirGradient device,
     // e.g. "http://192.168.1.50" or "http://airgradient_xxxx.local"); the
     // sensor's local server exposes GET /measures/current. A full cloud URL
     // that already contains the path is used as-is.
     String url = s.endpoint;
-    if (!url.startsWith("http")) url = "http://" + url;
+    url.trim();
+    // Default to plain HTTP (local devices). Only the official cloud API is
+    // HTTPS unless the user typed the scheme explicitly.
+    bool cloud = url.indexOf("api.airgradient.com") >= 0;
+    if (!url.startsWith("http")) {
+        url = (cloud ? "https://" : "http://") + url;
+    }
     while (url.endsWith("/")) url.remove(url.length() - 1);
     if (url.indexOf("/measures/current") < 0) url += "/measures/current";
-    // Token is only needed by the cloud API; local endpoints skip it.
-    if (s.apiKey.length() > 0 && url.indexOf("token=") < 0) {
+    // Token is ONLY for the cloud API. Local endpoints never get one — this
+    // ignores any stale token left in NVS from an earlier cloud config.
+    if (cloud && s.apiKey.length() > 0 && url.indexOf("token=") < 0) {
         url += (url.indexOf('?') >= 0) ? "&" : "?";
         url += "token=" + s.apiKey;
     }
+    setUrl(url);  // expose the exact URL for the debug overlay
 
     // Extract the bare host (no scheme, no port, no path) for the status
     // screen, and resolve it if it is a DNS name.
@@ -129,50 +174,60 @@ bool AirGradientClient::fetchOnce(const AppSettings& s) {
     String resolved;
     IPAddress ip;
     bool isLiteralIp = ip.fromString(host);
-    if (!isLiteralIp && WiFi.hostByName(host.c_str(), ip) == 1) {
-        resolved = ip.toString();
+    if (!isLiteralIp) {
+        // A DNS name the ESP itself can't resolve is a common cause of the
+        // "timeout" you see when the host pings fine from your PC.
+        resolved = (WiFi.hostByName(host.c_str(), ip) == 1) ? ip.toString()
+                                                            : String("(dns failed)");
     }
     setHostInfo(host, resolved);
 
     HTTPClient http;
+    http.setReuse(false);  // fresh connection each poll; avoids keep-alive bugs
     http.setTimeout(s.timeoutSec * 1000);
     http.setConnectTimeout(s.timeoutSec * 1000);
 
     bool https = url.startsWith("https");
     bool ok;
-    // Only construct the (heavier) TLS client when actually needed; local
-    // endpoints are plain HTTP, and building a WiFiClientSecure per poll
-    // wastes stack/heap.
+    // Only construct the (heavy, mbedTLS-backed) secure client when the URL
+    // is actually HTTPS. Building one per poll for a plain-HTTP local
+    // endpoint leaks heap on this core version — that was the crash.
     WiFiClient plainClient;
-    WiFiClientSecure secureClient;
+    std::unique_ptr<WiFiClientSecure> secureClient;
     if (https) {
-        secureClient.setInsecure();  // no cert pinning
-        secureClient.setHandshakeTimeout(s.timeoutSec);  // seconds
-        ok = http.begin(secureClient, url);
+        secureClient.reset(new WiFiClientSecure());
+        secureClient->setInsecure();  // no cert pinning
+        secureClient->setHandshakeTimeout(s.timeoutSec);  // seconds
+        ok = http.begin(*secureClient, url);
     } else {
         ok = http.begin(plainClient, url);
     }
     if (!ok) {
         LOG_E("api", "http.begin failed");
+        setLastErr("begin failed");
         _lastError = ApiError::BadResponse;
         return false;
     }
 
     int code = http.GET();
     if (code <= 0) {
-        LOG_W("api", "request failed: %s", http.errorToString(code).c_str());
+        String reason = http.errorToString(code);
+        LOG_W("api", "request failed: %s", reason.c_str());
+        setLastErr(reason);
         _lastError = ApiError::Timeout;
         http.end();
         return false;
     }
     if (code == 401 || code == 403) {
         LOG_W("api", "auth rejected (HTTP %d) - check token", code);
+        setLastErr("HTTP " + String(code) + " auth");
         _lastError = ApiError::AuthFailed;
         http.end();
         return false;
     }
     if (code != 200) {
         LOG_W("api", "unexpected HTTP %d", code);
+        setLastErr("HTTP " + String(code));
         _lastError = ApiError::BadResponse;
         http.end();
         return false;
@@ -181,6 +236,7 @@ bool AirGradientClient::fetchOnce(const AppSettings& s) {
     AirGradientReading fresh;
     bool parsed = parsePayload(http.getStream(), fresh);
     http.end();
+    if (parsed) setLastErr("");  // clear on success
 
     if (!parsed) {
         _lastError = ApiError::BadResponse;
@@ -196,52 +252,35 @@ bool AirGradientClient::fetchOnce(const AppSettings& s) {
 }
 
 bool AirGradientClient::parsePayload(Stream& stream, AirGradientReading& out) {
-    // Only pull the fields we need; works for both the /locations array
-    // response and a single-location object.
-    JsonDocument filterEl;
-    filterEl["locationName"] = true;
-    filterEl["pm02"] = true;
-    filterEl["pm02_corrected"] = true;   // cloud API naming
-    filterEl["pm02Compensated"] = true;  // local server naming
-    filterEl["rco2"] = true;
-    filterEl["rco2_corrected"] = true;
-    filterEl["atmp"] = true;
-    filterEl["atmp_corrected"] = true;
-    filterEl["atmpCompensated"] = true;
-    filterEl["rhum"] = true;
-    filterEl["rhum_corrected"] = true;
-    filterEl["rhumCompensated"] = true;
-    filterEl["tvocIndex"] = true;
-    filterEl["noxIndex"] = true;
-    filterEl["wifi"] = true;
-    filterEl["timestamp"] = true;
-    filterEl["model"] = true;
-    filterEl["serialno"] = true;
-
-    JsonDocument filter;
-    filter[0] = filterEl;                    // array responses
-    for (JsonPairConst kv : filterEl.as<JsonObjectConst>())  // object responses
-        filter[kv.key().c_str()] = true;
-
+    // No filter: the local server payload is a small flat object, and the
+    // cloud API is a small array of locations. (A JsonDocument filter can't
+    // be both an array and an object, so filtering silently dropped the
+    // whole local-server response.) Both fit easily unfiltered.
     JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, stream, DeserializationOption::Filter(filter));
+    DeserializationError err = deserializeJson(doc, stream);
     if (err) {
         LOG_W("api", "json parse error: %s", err.c_str());
+        setLastErr(String("json: ") + err.c_str());
         return false;
     }
 
+    // Local server -> object; cloud /locations -> array of locations.
     JsonObjectConst obj;
     if (doc.is<JsonArrayConst>()) {
         JsonArrayConst arr = doc.as<JsonArrayConst>();
         if (arr.size() == 0) {
             LOG_W("api", "empty location list");
+            setLastErr("empty location list");
             return false;
         }
         obj = arr[0];
     } else {
         obj = doc.as<JsonObjectConst>();
     }
-    if (obj.isNull()) return false;
+    if (obj.isNull()) {
+        setLastErr("json: not an object");
+        return false;
+    }
 
     // Preference order: local "Compensated" > cloud "_corrected" > raw.
     auto num = [&](const char* compensated, const char* corrected,
@@ -267,5 +306,6 @@ bool AirGradientClient::parsePayload(Stream& stream, AirGradientReading& out) {
     out.timestamp = obj["timestamp"] | "";
     out.receivedAtMs = millis();
     out.valid = !isnan(out.pm25) || !isnan(out.co2) || !isnan(out.temperature);
+    if (!out.valid) setLastErr("json ok but no sensor fields");
     return out.valid;
 }

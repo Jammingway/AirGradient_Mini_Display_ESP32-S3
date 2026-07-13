@@ -32,7 +32,7 @@ void Dashboard::load(bool deletePrev) {
 void Dashboard::setDebugLine(const String& text) {
     if (!_debugLbl) {
         _debugLbl = lv_label_create(_screen);
-        lv_obj_set_style_text_font(_debugLbl, &lv_font_unscii_8, 0);
+        lv_obj_set_style_text_font(_debugLbl, &lv_font_unscii_16, 0);
         lv_obj_set_style_text_color(_debugLbl, lv_color_hex(0x33FF66), 0);
         lv_obj_set_style_bg_color(_debugLbl, lv_color_black(), 0);
         lv_obj_set_style_bg_opa(_debugLbl, LV_OPA_60, 0);
@@ -108,17 +108,8 @@ void Dashboard::buildWidgets(const ThemeManager& theme, const SettingsManager& s
     }
     JsonArray layout = doc["layout"].as<JsonArray>();
 
-    // Grid dimensions come from the layout itself.
-    int cols = 1, rows = 1;
-    for (JsonObject item : layout) {
-        cols = max(cols, (int)item["x"] + max(1, (int)item["w"]));
-        rows = max(rows, (int)item["y"] + max(1, (int)item["h"]));
-    }
-    int gridW = LCD_H_RES - 2 * GAP;
-    int gridH = LCD_V_RES - TOP_BAR_H - GAP;
-    int cellW = (gridW - (cols - 1) * GAP) / cols;
-    int cellH = (gridH - (rows - 1) * GAP) / rows;
-
+    // Instantiate the enabled widgets in layout order; positions are ignored
+    // here and computed by flowLayout() so the grid always fills the screen.
     for (JsonObject item : layout) {
         const char* type = item["type"] | "";
         std::unique_ptr<Widget> w;
@@ -137,11 +128,7 @@ void Dashboard::buildWidgets(const ThemeManager& theme, const SettingsManager& s
             continue;
         }
 
-        GridCell cell{(uint8_t)(item["x"] | 0), (uint8_t)(item["y"] | 0),
-                      (uint8_t)max(1, (int)(item["w"] | 1)), (uint8_t)max(1, (int)(item["h"] | 1))};
-        w->setCell(cell);
         w->create(_grid, theme);
-        w->place(0, 0, cellW, cellH, GAP);
 
         // Tapping the "last updated" card triggers a manual refresh.
         InfoWidget* info = w->asInfo();
@@ -157,7 +144,49 @@ void Dashboard::buildWidgets(const ThemeManager& theme, const SettingsManager& s
         }
         _widgets.push_back(std::move(w));
     }
-    LOG_I("dashboard", "built %d widgets (%dx%d grid)", (int)_widgets.size(), cols, rows);
+
+    flowLayout();
+}
+
+void Dashboard::flowLayout() {
+    // Pack the enabled widgets into a grid that fills the whole area as
+    // evenly as possible: choose the row count whose cells sit closest to a
+    // pleasant aspect ratio, spread widgets across rows, and let shorter rows
+    // stretch their cells wider so there are never gaps (horizontally or
+    // vertically). Disabling a widget simply reflows the rest to fill the
+    // freed space.
+    int n = (int)_widgets.size();
+    if (n == 0) return;
+
+    int gridW = LCD_H_RES - 2 * GAP;
+    int gridH = LCD_V_RES - TOP_BAR_H - GAP;
+
+    int rows = 1;
+    float bestScore = 1e9f;
+    for (int tryRows = 1; tryRows <= min(n, 5); tryRows++) {
+        int cols = (n + tryRows - 1) / tryRows;
+        float cellAspect = ((float)gridW / cols) / ((float)gridH / tryRows);
+        float score = fabsf(cellAspect - 1.7f);  // target: slightly wide cards
+        if (score < bestScore) {
+            bestScore = score;
+            rows = tryRows;
+        }
+    }
+
+    int base = n / rows;
+    int extra = n % rows;  // the first `extra` rows carry one more widget
+    int cellH = (gridH - (rows - 1) * GAP) / rows;
+
+    int idx = 0;
+    for (int r = 0; r < rows; r++) {
+        int count = base + (r < extra ? 1 : 0);
+        if (count <= 0) continue;
+        int cellW = (gridW - (count - 1) * GAP) / count;
+        for (int c = 0; c < count; c++) {
+            _widgets[idx++]->setRect(c * (cellW + GAP), r * (cellH + GAP), cellW, cellH);
+        }
+    }
+    LOG_I("dashboard", "flowed %d widgets into %d rows", n, rows);
 }
 
 void Dashboard::onUpdatedCardClicked() {
