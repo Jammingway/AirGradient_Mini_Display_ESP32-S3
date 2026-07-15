@@ -62,6 +62,7 @@ void SettingsManager::load() {
     _s.usAqi = _prefs.getBool("usAqi", true);
     _s.disableSplash = _prefs.getBool("noSplash", false);
     _s.debug = _prefs.getBool("debug", false);
+    _s.deviceName = _prefs.getString("devname", "");
     _s.layoutJson = _prefs.getString("layout", defaultLayoutJson());
     LOG_I("settings", "loaded (configured=%s)", isConfigured() ? "yes" : "no");
 }
@@ -123,6 +124,14 @@ void SettingsManager::setLayoutJson(const String& layoutJson) {
     Guard g(_mutex);
     _s.layoutJson = layoutJson;
     _prefs.putString("layout", layoutJson);
+}
+
+void SettingsManager::setDeviceName(const String& name) {
+    Guard g(_mutex);
+    _s.deviceName = name;
+    _s.deviceName.trim();
+    _prefs.putString("devname", _s.deviceName);
+    LOG_I("settings", "device name override='%s'", _s.deviceName.c_str());
 }
 
 void SettingsManager::factoryReset() {

@@ -17,6 +17,19 @@
 class ThemeManager;
 class SettingsManager;
 
+// Everything the status tick pushes into the WiFi and System cards.
+struct DashboardStatus {
+    String wifiText;
+    bool   wifiAlert = false;
+    String updatedText;
+    bool   updatedAlert = false;
+    String headline;
+    String localIp;        // this display's address on the LAN
+    String sensorTarget;   // sensor host name or IP
+    String uptime;         // this display's uptime
+    String sensorUptime;   // empty when the sensor doesn't expose it
+};
+
 class Dashboard {
 public:
     using ActionCallback = std::function<void()>;
@@ -31,12 +44,13 @@ public:
 
     void updateReading(const AirGradientReading& r, const AppSettings& s,
                        const ThemeManager& theme);
-    void updateStatus(const String& wifiText, bool wifiAlert,
-                      const String& updatedText, bool updatedAlert,
-                      const String& headline, const ThemeManager& theme);
+    void updateStatus(const DashboardStatus& st, const ThemeManager& theme);
 
     void onRefresh(ActionCallback cb) { _refreshCb = std::move(cb); }
     void onSettings(ActionCallback cb) { _settingsCb = std::move(cb); }
+
+    // Applies the user's sensor-name override; empty restores the reported name.
+    void setCustomName(const String& name);
 
     // Debug readout pinned bottom-left; empty string hides it.
     void setDebugLine(const String& text);
@@ -53,6 +67,9 @@ private:
 
     void onUpdatedCardClicked();
 
+    // Sensor name: custom override wins, else whatever the sensor reports.
+    void applyName();
+
     // Full-screen trend chart overlay.
     void buildChartOverlay();
     void showChart(int metric);
@@ -63,6 +80,7 @@ private:
 
     lv_obj_t* _screen = nullptr;
     lv_obj_t* _grid = nullptr;
+    lv_obj_t* _titleBox = nullptr;
     lv_obj_t* _titleLbl = nullptr;
     lv_obj_t* _headlineLbl = nullptr;
     lv_obj_t* _debugLbl = nullptr;
@@ -71,6 +89,9 @@ private:
     std::vector<std::unique_ptr<Widget>> _widgets;
     ActionCallback _refreshCb;
     ActionCallback _settingsCb;
+
+    String _customName;    // user override; empty = use the reported name
+    String _reportedName;  // last name the sensor sent
 
     // Trend chart overlay state.
     HistoryManager* _history = nullptr;

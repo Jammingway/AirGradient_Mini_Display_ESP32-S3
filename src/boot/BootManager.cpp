@@ -1,6 +1,7 @@
 #include "BootManager.h"
 #include <WiFi.h>
 #include <esp_system.h>
+#include <esp_timer.h>
 #include "../settings/SettingsManager.h"
 #include "../network/WifiManager.h"
 #include "../api/AirGradientClient.h"
@@ -9,6 +10,37 @@
 #include "../display/DisplayDriver.h"
 #include "../touch/GT911Touch.h"
 #include "../utils/Logger.h"
+
+// Always two units, stepping up as the span grows: "5m 12s" -> "3h 22m" ->
+// "3d 4h" -> "1w 1d" -> "1y 5w". Precision matters less the longer a box has
+// been up — the point is only "did it stay running?". Months are deliberately
+// absent (unequal lengths); years assume 365 days, which is close enough for a
+// value this device will realistically never reach.
+static String durationText(uint64_t totalSec) {
+    unsigned long long min = totalSec / 60ULL;
+    unsigned long long hour = min / 60ULL;
+    unsigned long long day = hour / 24ULL;
+    unsigned long long week = day / 7ULL;
+    unsigned long long year = day / 365ULL;
+
+    char buf[24];
+    if (year)
+        snprintf(buf, sizeof(buf), "%luy %luw", (unsigned long)year,
+                 (unsigned long)((day % 365ULL) / 7ULL));
+    else if (week)
+        snprintf(buf, sizeof(buf), "%luw %lud", (unsigned long)week,
+                 (unsigned long)(day % 7ULL));
+    else if (day)
+        snprintf(buf, sizeof(buf), "%lud %luh", (unsigned long)day,
+                 (unsigned long)(hour % 24ULL));
+    else if (hour)
+        snprintf(buf, sizeof(buf), "%luh %lum", (unsigned long)hour,
+                 (unsigned long)(min % 60ULL));
+    else
+        snprintf(buf, sizeof(buf), "%lum %lus", (unsigned long)min,
+                 (unsigned long)(totalSec % 60ULL));
+    return String(buf);
+}
 
 static const char* resetReasonStr(esp_reset_reason_t r) {
     switch (r) {
@@ -62,9 +94,12 @@ void BootManager::begin(SettingsManager& settings, WifiManager& wifi, AirGradien
         enterTerminal();
     } else {
         _state = State::Splash;
-        // deletePrev=true frees the splash (and all its cascade objects)
-        // once the transition completes.
-        _splash.show(theme, [this]() { enterTerminal(true); });
+        // deletePrev=true frees the splash screen once the transition
+        // completes. To restore the logo + cascade first act, chain
+        // CascadeSplash ahead of this from its DoneCallback.
+        _splash.show(theme.palette().terminalGreen,
+                     "Greetings Professor Falken.\n\nShall we play a game?",
+                     [this]() { enterTerminal(true); });
     }
 }
 
@@ -123,6 +158,8 @@ void BootManager::onSettingsClosed(const SettingsScreen::Result& res) {
     if (_dashboardCreated && (res.generalChanged || res.layoutChanged || res.factoryReset)) {
         // Cheapest correct path for theme/layout changes: rebuild widgets.
         _dashboard.rebuild(*_theme, *_settings);
+        // The title lives in the top bar, which rebuild() doesn't touch.
+        _dashboard.setCustomName(s.deviceName);
     }
 
     if (res.networkChanged || res.factoryReset) {
@@ -235,21 +272,51 @@ void BootManager::tick() {
     }
 }
 
+String BootManager::sensorUptimeText(const AirGradientReading& r) {
+    if (!r.sensorBootValid) return "";
+
+    // `boot` only ticks while the sensor posts to the AirGradient cloud, so a
+    // sensor in local-only mode reports a frozen counter. Two readings at
+    // least 3 minutes apart carrying the same value prove it has stalled —
+    // better to show nothing than a confidently wrong uptime.
+    if (!_sensorBootSeen || r.sensorBootMinutes != _sensorBootMinutes) {
+        _sensorBootMinutes = r.sensorBootMinutes;
+        _sensorBootAtMs = r.receivedAtMs;
+        _sensorBootSeen = true;
+        _sensorBootStalled = false;
+    } else if (r.receivedAtMs - _sensorBootAtMs > 180000UL) {
+        _sensorBootStalled = true;
+    }
+
+    if (_sensorBootStalled) return "";
+    // "~": derived from a minute-counter, not a figure the sensor reports.
+    return "~" + durationText((uint64_t)r.sensorBootMinutes * 60ULL);
+}
+
 void BootManager::updateDashboardStatus() {
     AirGradientReading r;
     bool hasData = _api->latest(r);
 
     bool wifiOk = _wifi->isConnected();
-    String updated = hasData ? updatedAgoText(r.receivedAtMs) : String("no data");
+
+    DashboardStatus st;
+    st.wifiText = _wifi->statusText();
+    st.wifiAlert = !wifiOk;
+    st.updatedText = hasData ? updatedAgoText(r.receivedAtMs) : String("no data");
     uint32_t staleMs = (uint32_t)_settings->get().pollIntervalSec * 3000;
-    bool stale = !hasData || (millis() - r.receivedAtMs) > staleMs;
+    st.updatedAlert = !hasData || (millis() - r.receivedAtMs) > staleMs;
+    st.localIp = wifiOk ? WiFi.localIP().toString() : String("");
+    st.sensorTarget = _api->host();
+    st.uptime = durationText((uint64_t)(esp_timer_get_time() / 1000000LL));
+    st.sensorUptime = hasData ? sensorUptimeText(r) : String("");
 
-    String headline;
-    if (!wifiOk) headline = "offline - showing cached data";
-    else if (_api->lastError() == ApiError::AuthFailed) headline = "API auth failed - check token";
-    else if (_api->consecutiveFailures() > 1) headline = "API unreachable - showing cached data";
+    if (!wifiOk) st.headline = "offline - showing cached data";
+    else if (_api->lastError() == ApiError::AuthFailed)
+        st.headline = "API auth failed - check token";
+    else if (_api->consecutiveFailures() > 1)
+        st.headline = "API unreachable - showing cached data";
 
-    _dashboard.updateStatus(_wifi->statusText(), !wifiOk, updated, stale, headline, *_theme);
+    _dashboard.updateStatus(st, *_theme);
 }
 
 void BootManager::handleSleep() {

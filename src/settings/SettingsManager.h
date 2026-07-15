@@ -32,6 +32,10 @@ struct AppSettings {
     bool disableSplash = false;    // skip the boot splash straight to terminal
     bool debug = false;            // show diagnostics overlay on status/dashboard
 
+    // User-chosen name for the sensor, set by double-tapping the dashboard
+    // title. Empty = fall back to whatever the sensor reports.
+    String deviceName;
+
     // Dashboard layout (JSON, see Dashboard docs)
     String layoutJson;
 };
@@ -65,6 +69,8 @@ public:
                     uint16_t sleepTimeoutMin, bool tempF, bool usAqi,
                     bool disableSplash, bool debug);
     void setLayoutJson(const String& layoutJson);
+    // Empty string clears the override and restores the reported name.
+    void setDeviceName(const String& name);
 
     void factoryReset();
 

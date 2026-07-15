@@ -16,7 +16,7 @@ static const WidgetEntry WIDGET_CATALOG[] = {
     {"tvoc", "metric", "TVOC index"},
     {"nox", "metric", "NOx index"},
     {"wifi", "wifi", "WiFi status"},
-    {"updated", "updated", "Last updated"},
+    {"updated", "updated", "System info"},
 };
 
 static const char* POLL_OPTIONS = "15 s\n30 s\n1 min\n3 min\n5 min\n15 min";
@@ -332,6 +332,10 @@ void SettingsScreen::buildGeneralTab(lv_obj_t* tab) {
     const ThemePalette& p = _theme->palette();
     lv_obj_set_flex_flow(tab, LV_FLEX_FLOW_COLUMN);
 
+    // Blank falls back to the name the sensor reports (model/serial).
+    _taDeviceName = makeTextRow(tab, "Sensor name", s.deviceName);
+    lv_textarea_set_max_length(_taDeviceName, 24);
+
     _ddTheme = makeDropdownRow(tab, "Theme", "Dark\nLight", s.theme == "light" ? 1 : 0);
 
     lv_obj_t* row = makeRowBase(tab, "Brightness", p);
@@ -344,7 +348,23 @@ void SettingsScreen::buildGeneralTab(lv_obj_t* tab) {
     lv_obj_set_style_bg_color(_slBrightness, termDim(p), LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(_slBrightness, termGreen(p), LV_PART_KNOB);
 
-    _ddSleep = makeDropdownRow(tab, "Sleep after", SLEEP_OPTIONS,
+    // Live readout just left of the bar. Fixed width + right-aligned so the
+    // slider doesn't shift when the value crosses 100%.
+    _lblBrightness = lv_label_create(row);
+    lv_obj_set_style_text_font(_lblBrightness, &lv_font_unscii_16, 0);
+    lv_obj_set_style_text_color(_lblBrightness, termGreen(p), 0);
+    lv_obj_set_width(_lblBrightness, 52);
+    lv_obj_set_style_text_align(_lblBrightness, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_align(_lblBrightness, LV_ALIGN_RIGHT_MID, -(16 + 320 + 10), 0);
+    lv_label_set_text_fmt(_lblBrightness, "%d%%", (int)s.brightness);
+
+    lv_obj_add_event_cb(_slBrightness, [](lv_event_t* e) {
+        auto* self = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+        lv_label_set_text_fmt(self->_lblBrightness, "%d%%",
+                              (int)lv_slider_get_value(self->_slBrightness));
+    }, LV_EVENT_VALUE_CHANGED, this);
+
+    _ddSleep = makeDropdownRow(tab, "Display Sleep", SLEEP_OPTIONS,
                                indexOfValue(SLEEP_VALUES, 6, s.sleepTimeoutMin));
     _swTempF = makeSwitchRow(tab, "Temperature in \xC2\xB0""F", s.tempFahrenheit);
     _swDisableSplash = makeSwitchRow(tab, "Disable splash screen", s.disableSplash);
@@ -444,6 +464,13 @@ void SettingsScreen::save() {
         retryCount != s.retryCount || retryDelay != s.retryDelaySec) {
         _settings->setApi(endpoint, apiKey, poll, timeout, retryCount, retryDelay);
         _result.apiChanged = true;
+    }
+
+    String deviceName = lv_textarea_get_text(_taDeviceName);
+    deviceName.trim();
+    if (deviceName != s.deviceName) {
+        _settings->setDeviceName(deviceName);
+        _result.generalChanged = true;
     }
 
     String themeName = lv_dropdown_get_selected(_ddTheme) == 1 ? "light" : "dark";

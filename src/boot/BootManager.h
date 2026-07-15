@@ -7,7 +7,7 @@
  */
 #pragma once
 #include <Arduino.h>
-#include "../ui/SplashScreen.h"
+#include "../ui/WoprGreeting.h"
 #include "../ui/BootTerminal.h"
 #include "../ui/Dashboard.h"
 #include "../ui/SettingsScreen.h"
@@ -39,6 +39,8 @@ private:
     void handleSleep();
     void updateDebug();
     String updatedAgoText(uint32_t receivedAtMs) const;
+    // Empty when the sensor's boot counter is absent or has stalled.
+    String sensorUptimeText(const AirGradientReading& r);
 
     SettingsManager* _settings = nullptr;
     WifiManager* _wifi = nullptr;
@@ -48,7 +50,7 @@ private:
     DisplayDriver* _display = nullptr;
     GT911Touch* _touch = nullptr;
 
-    SplashScreen _splash;
+    WoprGreeting _splash;
     BootTerminal _terminal;
     Dashboard _dashboard;
     SettingsScreen _settingsScreen;
@@ -66,4 +68,11 @@ private:
     uint32_t _lastDebugTickMs = 0;
     uint32_t _lastRepaintMs = 0;
     const char* _resetReason = "";   // captured once at boot
+
+    // Tracks the sensor's boot counter to detect a stalled one (see
+    // sensorUptimeText).
+    uint32_t _sensorBootMinutes = 0;
+    uint32_t _sensorBootAtMs = 0;
+    bool _sensorBootSeen = false;
+    bool _sensorBootStalled = false;
 };

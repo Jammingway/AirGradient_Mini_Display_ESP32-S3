@@ -311,6 +311,14 @@ bool AirGradientClient::parsePayload(Stream& stream, AirGradientReading& out) {
     if (out.deviceName.length() == 0) out.deviceName = obj["model"] | "";
     if (out.deviceName.length() == 0) out.deviceName = obj["serialno"] | "";
     out.timestamp = obj["timestamp"] | "";
+    // `bootCount` is the documented name; `boot` is the older alias.
+    if (obj["bootCount"].is<uint32_t>()) {
+        out.sensorBootMinutes = obj["bootCount"].as<uint32_t>();
+        out.sensorBootValid = true;
+    } else if (obj["boot"].is<uint32_t>()) {
+        out.sensorBootMinutes = obj["boot"].as<uint32_t>();
+        out.sensorBootValid = true;
+    }
     out.receivedAtMs = millis();
     out.valid = !isnan(out.pm25) || !isnan(out.co2) || !isnan(out.temperature);
     if (!out.valid) setLastErr("json ok but no sensor fields");

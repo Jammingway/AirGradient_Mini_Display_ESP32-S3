@@ -19,6 +19,15 @@ struct AirGradientReading {
     String timestamp;         // ISO string from the API
     uint32_t receivedAtMs = 0;
     bool valid = false;
+
+    // The local API has no uptime field. `boot` counts measurement cycles,
+    // which the sensor ticks once per WIFI_TRANSMISSION_INTERVAL (60 s), so
+    // it doubles as minutes-since-boot — but only while the sensor is posting
+    // to the AirGradient cloud: sendDataToServer() returns early when
+    // isPostDataToAirGradient() is false, and the counter then freezes.
+    // Consumers must treat this as a proxy and verify it is still advancing.
+    uint32_t sensorBootMinutes = 0;
+    bool sensorBootValid = false;
 };
 
 // US EPA AQI from PM2.5 (2024 breakpoints).

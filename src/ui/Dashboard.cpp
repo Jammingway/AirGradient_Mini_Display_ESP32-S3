@@ -16,7 +16,9 @@ void Dashboard::create(const ThemeManager& theme, const SettingsManager& setting
     lv_obj_set_style_bg_color(_screen, p.bg, 0);
     lv_obj_remove_flag(_screen, LV_OBJ_FLAG_SCROLLABLE);
 
+    _customName = settings.get().deviceName;
     buildTopBar(theme);
+    applyName();
 
     _grid = lv_obj_create(_screen);
     lv_obj_remove_style_all(_grid);
@@ -62,11 +64,23 @@ void Dashboard::rebuild(const ThemeManager& theme, const SettingsManager& settin
 void Dashboard::buildTopBar(const ThemeManager& theme) {
     const ThemePalette& p = theme.palette();
 
-    _titleLbl = lv_label_create(_screen);
+    // The sensor name sits in a rounded outline. It is display-only; the name
+    // itself is edited on the settings General tab.
+    _titleBox = lv_obj_create(_screen);
+    lv_obj_remove_style_all(_titleBox);
+    lv_obj_set_size(_titleBox, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_radius(_titleBox, 10, 0);
+    lv_obj_set_style_border_width(_titleBox, 1, 0);
+    lv_obj_set_style_border_color(_titleBox, lv_color_white(), 0);
+    lv_obj_set_style_pad_hor(_titleBox, 10, 0);
+    lv_obj_set_style_pad_ver(_titleBox, 5, 0);
+    lv_obj_align(_titleBox, LV_ALIGN_TOP_LEFT, GAP + 4, 10);
+    lv_obj_remove_flag(_titleBox, LV_OBJ_FLAG_SCROLLABLE);
+
+    _titleLbl = lv_label_create(_titleBox);
     lv_obj_set_style_text_font(_titleLbl, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(_titleLbl, p.text, 0);
     lv_label_set_text(_titleLbl, "AirGradient");
-    lv_obj_align(_titleLbl, LV_ALIGN_TOP_LEFT, GAP + 4, 16);
 
     _headlineLbl = lv_label_create(_screen);
     lv_obj_set_style_text_font(_headlineLbl, &lv_font_montserrat_14, 0);
@@ -220,13 +234,27 @@ void Dashboard::updateReading(const AirGradientReading& r, const AppSettings& s,
                               const ThemeManager& theme) {
     _tempF = s.tempFahrenheit;
     for (auto& w : _widgets) w->update(r, s, theme);
-    if (r.valid && r.deviceName.length()) {
-        lv_label_set_text(_titleLbl, r.deviceName.c_str());
-    }
+    if (r.valid && r.deviceName.length()) _reportedName = r.deviceName;
+    _customName = s.deviceName;
+    applyName();
     // Live-update a chart that happens to be open.
     if (_chartOverlay && !lv_obj_has_flag(_chartOverlay, LV_OBJ_FLAG_HIDDEN)) {
         refreshChart();
     }
+}
+
+// ---------------------- sensor name ----------------------
+
+void Dashboard::applyName() {
+    if (!_titleLbl) return;
+    String name = _customName.length() ? _customName : _reportedName;
+    if (!name.length()) name = "AirGradient";
+    lv_label_set_text(_titleLbl, name.c_str());
+}
+
+void Dashboard::setCustomName(const String& name) {
+    _customName = name;
+    applyName();
 }
 
 // ---------------------- trend chart overlay ----------------------
@@ -414,14 +442,19 @@ void Dashboard::refreshChart() {
     lv_label_set_text(_chartStats, stats);
 }
 
-void Dashboard::updateStatus(const String& wifiText, bool wifiAlert,
-                             const String& updatedText, bool updatedAlert,
-                             const String& headline, const ThemeManager& theme) {
+void Dashboard::updateStatus(const DashboardStatus& st, const ThemeManager& theme) {
     for (auto& w : _widgets) {
         InfoWidget* info = w->asInfo();
         if (!info) continue;
-        if (info->kind() == InfoWidget::Kind::Wifi) info->setText(wifiText, wifiAlert, theme);
-        else info->setText(updatedText, updatedAlert, theme);
+        if (info->kind() == InfoWidget::Kind::Wifi) {
+            info->setText(st.wifiText, st.wifiAlert, theme);
+            info->setRow(InfoWidget::WifiIp, st.localIp);
+            info->setRow(InfoWidget::WifiSensor, st.sensorTarget);
+        } else {
+            info->setText(st.updatedText, st.updatedAlert, theme);
+            info->setRow(InfoWidget::SysUptime, st.uptime);
+            info->setRow(InfoWidget::SysSensorUptime, st.sensorUptime);
+        }
     }
-    lv_label_set_text(_headlineLbl, headline.c_str());
+    lv_label_set_text(_headlineLbl, st.headline.c_str());
 }

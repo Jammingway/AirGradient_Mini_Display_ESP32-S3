@@ -68,8 +68,10 @@ private:
     lv_obj_t* _ddRetryCount = nullptr;
     lv_obj_t* _ddRetryDelay = nullptr;
     // General
+    lv_obj_t* _taDeviceName = nullptr;
     lv_obj_t* _ddTheme = nullptr;
     lv_obj_t* _slBrightness = nullptr;
+    lv_obj_t* _lblBrightness = nullptr;
     lv_obj_t* _ddSleep = nullptr;
     lv_obj_t* _swTempF = nullptr;
     lv_obj_t* _swDisableSplash = nullptr;
