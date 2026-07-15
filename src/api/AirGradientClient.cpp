@@ -12,9 +12,9 @@ void AirGradientClient::begin(SettingsManager& settings, WifiManager& wifi) {
     _settings = &settings;
     _wifi = &wifi;
     _mutex = xSemaphoreCreateMutex();
-    // 24KB stack: HTTP + JSON parsing headroom (a per-poll stack overflow
-    // here would panic-reset the whole chip). Runs on core 0, away from the
-    // LVGL/loop core.
+    // 24KB stack: HTTP + JSON parsing headroom. Runs on core 0, away from the
+    // LVGL/loop core, so a poll never stalls the UI. (Shared state with the
+    // UI thread is mutex-protected; see snapshot() and latest().)
     xTaskCreatePinnedToCore(taskEntry, "ag_api", 24576, this, 1, &_task, 0);
 }
 
@@ -183,26 +183,32 @@ bool AirGradientClient::fetchOnce(const AppSettings& s) {
     }
     setHostInfo(host, resolved);
 
-    HTTPClient http;
-    http.setReuse(false);  // fresh connection each poll; avoids keep-alive bugs
-    http.setTimeout(s.timeoutSec * 1000);
-    http.setConnectTimeout(s.timeoutSec * 1000);
-
     bool https = url.startsWith("https");
-    bool ok;
-    // Only construct the (heavy, mbedTLS-backed) secure client when the URL
-    // is actually HTTPS. Building one per poll for a plain-HTTP local
-    // endpoint leaks heap on this core version — that was the crash.
+
+    // ORDER MATTERS: the transport client must be declared BEFORE HTTPClient.
+    // HTTPClient stores a raw pointer to it, and locals are destroyed in
+    // reverse declaration order — with the client declared second it died
+    // first, so ~HTTPClient() then used a dangling pointer and tore down a
+    // socket lwip still owned. The next inbound ACK hit a freed pbuf and
+    // aborted the tcpip thread ("pbuf_free: p->ref > 0"). Client first =
+    // destroyed last = HTTPClient always unwinds against a live client.
+    //
+    // The secure client is only constructed for real HTTPS URLs: building an
+    // mbedTLS context per poll for a plain-HTTP local endpoint leaks heap.
     WiFiClient plainClient;
     std::unique_ptr<WiFiClientSecure> secureClient;
     if (https) {
         secureClient.reset(new WiFiClientSecure());
         secureClient->setInsecure();  // no cert pinning
         secureClient->setHandshakeTimeout(s.timeoutSec);  // seconds
-        ok = http.begin(*secureClient, url);
-    } else {
-        ok = http.begin(plainClient, url);
     }
+
+    HTTPClient http;
+    http.setReuse(false);  // fresh connection each poll; avoids keep-alive bugs
+    http.setTimeout(s.timeoutSec * 1000);
+    http.setConnectTimeout(s.timeoutSec * 1000);
+
+    bool ok = https ? http.begin(*secureClient, url) : http.begin(plainClient, url);
     if (!ok) {
         LOG_E("api", "http.begin failed");
         setLastErr("begin failed");

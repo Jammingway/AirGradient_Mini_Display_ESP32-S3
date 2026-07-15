@@ -21,7 +21,8 @@ void WifiManager::begin(SettingsManager& settings) {
 }
 
 void WifiManager::restart() {
-    WiFi.disconnect(true);
+    // false = keep the radio/driver up (see startAttempt).
+    WiFi.disconnect(false);
     _connectedFlag = false;
     _retryCount = 0;
     if (_settings->get().ssid1.length() > 0) {
@@ -38,7 +39,12 @@ void WifiManager::startAttempt(uint8_t index) {
     _currentSsid = (index == 0) ? s.ssid1 : s.ssid2;
     const String& pass = (index == 0) ? s.pass1 : s.pass2;
 
-    WiFi.disconnect(true);
+    // Drop the association only — NEVER disconnect(true). The `wifioff=true`
+    // form calls esp_wifi_stop(); restarting it here made the netstack
+    // callback re-registration fail (ESP_ERR_WIFI_STOP_STATE) and left lwip
+    // attached to a half-torn-down netif, so the next inbound TCP packet
+    // aborted in the tcpip thread with "pbuf_free: p->ref > 0".
+    WiFi.disconnect(false);
     delay(10);
     WiFi.begin(_currentSsid.c_str(), pass.c_str());
 

@@ -2,5 +2,3 @@
 .vscode/
 *.pyc
 __pycache__/
-logs
-.log
