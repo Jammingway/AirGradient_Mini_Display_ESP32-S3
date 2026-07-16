@@ -1,3 +1,5 @@
+<img width="1024" height="1024" alt="Jammingway-AirQuality" src="https://github.com/user-attachments/assets/9cc2ca1f-7e15-406c-b95b-6785d9cf4b2b" />
+
 # AirGradient Remote Display
 
 A standalone wireless touchscreen companion display for the **AirGradient ONE**.
