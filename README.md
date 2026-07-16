@@ -97,7 +97,8 @@ src/
   settings/   SettingsManager — NVS persistence (namespace "agdisp")
   models/     AirGradientReading + US AQI conversion
   themes/     palettes + severity colors
-  ui/         SplashScreen, BootTerminal, Dashboard, SettingsScreen
+  ui/         CascadeSplash, WoprGreeting (boot screens), BootTerminal,
+              Dashboard, SettingsScreen
   widgets/    Widget base, MetricWidget (descriptor table), InfoWidget
   assets/     panda.png → panda_img.c (RGB565); panda.svg is an unused
               alternate vector mascot kept for reference
