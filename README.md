@@ -107,9 +107,24 @@ tools/
 
 ## Notes & known limitations
 
+- **The physical RESET button is unreliable — use Settings > General >
+  "Restart Device" instead.** GPIO0 (the ESP32-S3's boot-strap pin) is wired
+  to `LCD_PIN_D6` on this board. While the display is running, that line is
+  actively driven as part of normal rendering, and a hardware EN reset can
+  sample it low, dropping into the ROM's UART-download bootloader instead of
+  the app (screen stays black forever). Confirmed 100% reproducible on
+  hardware, independent of power source (USB, UART, battery). This is
+  Waveshare's wiring, not a firmware bug, and there's no firmware fix for a
+  hardware EN-pin reset. A software restart (`ESP.restart()`, wired to the
+  Settings button) uses a different reset path — every crash-triggered reboot
+  this project has seen has landed back in the app, never in download mode.
 - **Pixel clock is 12 MHz, not 16.** The higher rate left faint edge ghosting
   near high-contrast text; 12 MHz (~29 Hz refresh) is flicker-free on this LCD
-  and eliminates it. Don't "optimize" it back up.
+  and eliminates it. Don't "optimize" it back up. 10 MHz was also tried:
+  the panel never locks (solid white from power-on, degrading through an
+  argyle pattern to black on reset) — below the ST7262's usable pixel-clock
+  range, not a bandwidth symptom. 12 MHz sits in a narrow window with
+  measured failures on both sides.
 - **Declare `WiFiClient`/`WiFiClientSecure` before `HTTPClient`.**
   `HTTPClient` keeps a raw pointer to the client, and locals are destroyed in
   reverse declaration order — the other order gives `~HTTPClient()` a dangling

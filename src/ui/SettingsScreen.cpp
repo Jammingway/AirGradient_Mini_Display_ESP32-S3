@@ -1,4 +1,5 @@
 #include "SettingsScreen.h"
+#include <Arduino.h>  // ESP.restart()
 #include <ArduinoJson.h>
 #include "board_pins.h"
 #include "../settings/SettingsManager.h"
@@ -369,6 +370,28 @@ void SettingsScreen::buildGeneralTab(lv_obj_t* tab) {
     _swTempF = makeSwitchRow(tab, "Temperature in \xC2\xB0""F", s.tempFahrenheit);
     _swDisableSplash = makeSwitchRow(tab, "Disable splash screen", s.disableSplash);
     _swDebug = makeSwitchRow(tab, "Enable debug overlay", s.debug);
+
+    // The physical RESET button is unreliable on this board: GPIO0 doubles as
+    // LCD_PIN_D6 (see board_pins.h), so a hardware EN reset while the display
+    // is actively driving that line can sample it low and drop into the ROM's
+    // UART-download bootloader instead of rebooting the app (confirmed on
+    // hardware — 100% reproducible, independent of power source). A software
+    // restart goes through a different reset path, evidenced by every
+    // crash-triggered reboot this project has seen landing back in the app,
+    // never in download mode.
+    lv_obj_t* restartBtn = lv_button_create(tab);
+    lv_obj_set_size(restartBtn, LV_PCT(100), 48);
+    termButton(restartBtn, p);
+    lv_obj_t* restartLbl = lv_label_create(restartBtn);
+    lv_label_set_text(restartLbl, "RESTART DEVICE");
+    lv_obj_set_style_text_font(restartLbl, &lv_font_unscii_16, 0);
+    lv_obj_set_style_text_color(restartLbl, termGreen(p), 0);
+    lv_obj_center(restartLbl);
+    lv_obj_add_event_cb(restartBtn, [](lv_event_t* e) {
+        auto* self = static_cast<SettingsScreen*>(lv_event_get_user_data(e));
+        self->save();   // persist pending edits first, same as "< SAVE"
+        ESP.restart();  // never returns
+    }, LV_EVENT_CLICKED, this);
 }
 
 void SettingsScreen::buildDashboardTab(lv_obj_t* tab) {

@@ -245,11 +245,20 @@ void Dashboard::updateReading(const AirGradientReading& r, const AppSettings& s,
 
 // ---------------------- sensor name ----------------------
 
+// See InfoWidget.cpp: lv_label_set_text() repaints unconditionally, and these
+// run on the 1 Hz status tick.
+static void setLabelIfChanged(lv_obj_t* label, const char* text) {
+    if (!label) return;
+    const char* cur = lv_label_get_text(label);
+    if (cur && strcmp(cur, text) == 0) return;
+    lv_label_set_text(label, text);
+}
+
 void Dashboard::applyName() {
     if (!_titleLbl) return;
     String name = _customName.length() ? _customName : _reportedName;
     if (!name.length()) name = "AirGradient";
-    lv_label_set_text(_titleLbl, name.c_str());
+    setLabelIfChanged(_titleLbl, name.c_str());
 }
 
 void Dashboard::setCustomName(const String& name) {
@@ -456,5 +465,5 @@ void Dashboard::updateStatus(const DashboardStatus& st, const ThemeManager& them
             info->setRow(InfoWidget::SysSensorUptime, st.sensorUptime);
         }
     }
-    lv_label_set_text(_headlineLbl, st.headline.c_str());
+    setLabelIfChanged(_headlineLbl, st.headline.c_str());
 }

@@ -47,6 +47,7 @@ private:
     lv_obj_t* addRow(const ThemePalette& p, const char* label);
 
     Kind _kind;
+    bool _alert = false;   // last applied alert state, to avoid restyling
     lv_obj_t* _nameLbl = nullptr;
     lv_obj_t* _valueLbl = nullptr;  // WiFi card only
     lv_obj_t* _icon = nullptr;

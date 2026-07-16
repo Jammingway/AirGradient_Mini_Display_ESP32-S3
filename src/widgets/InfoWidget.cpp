@@ -1,4 +1,17 @@
 #include "InfoWidget.h"
+#include <cstring>
+
+// lv_label_set_text() invalidates and repaints unconditionally — it does not
+// compare first. The status tick runs at 1 Hz over rows that rarely change
+// (IP, sensor host, uptime), and every needless repaint is another write into
+// the PSRAM framebuffer competing with the RGB panel's bounce-buffer refill.
+// Comparing first is far cheaper than redrawing.
+static void setLabelIfChanged(lv_obj_t* label, const char* text) {
+    if (!label) return;
+    const char* cur = lv_label_get_text(label);
+    if (cur && strcmp(cur, text) == 0) return;
+    lv_label_set_text(label, text);
+}
 
 void InfoWidget::create(lv_obj_t* parent, const ThemeManager& theme) {
     const ThemePalette& p = theme.palette();
@@ -92,12 +105,16 @@ void InfoWidget::update(const AirGradientReading&, const AppSettings&, const The
 void InfoWidget::setText(const String& value, bool alert, const ThemeManager& theme) {
     lv_obj_t* target = _valueLbl ? _valueLbl : _rowVal[SysLastPolled];
     if (!target) return;
-    lv_label_set_text(target, value.c_str());
-    lv_obj_set_style_text_color(
-        target, alert ? theme.severityColor(Severity::Bad) : theme.palette().text, 0);
+    setLabelIfChanged(target, value.c_str());
+    // Restyling invalidates too, so only recolor on an actual state flip.
+    if (alert != _alert) {
+        _alert = alert;
+        lv_obj_set_style_text_color(
+            target, alert ? theme.severityColor(Severity::Bad) : theme.palette().text, 0);
+    }
 }
 
 void InfoWidget::setRow(Row row, const String& value) {
     if (row >= MAX_ROWS || !_rowVal[row]) return;
-    lv_label_set_text(_rowVal[row], value.length() ? value.c_str() : "--");
+    setLabelIfChanged(_rowVal[row], value.length() ? value.c_str() : "--");
 }

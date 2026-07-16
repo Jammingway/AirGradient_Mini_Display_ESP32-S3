@@ -33,6 +33,10 @@ bool DisplayDriver::begin() {
     cfg.num_fbs = 1;
     // Bounce buffers keep the panel fed from internal RAM while WiFi is
     // hammering the PSRAM bus — without them the image drifts/flickers.
+    // 10 lines is empirical, not arbitrary: 20 was tried and made things
+    // markedly WORSE (frame drift — the top edge wrapping to the bottom — on
+    // 3 of 4 boots). Longer per-ISR memcpys evidently hurt more than the
+    // relaxed deadline helps. Don't raise this without testing on hardware.
     cfg.bounce_buffer_size_px = LCD_H_RES * 10;
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 4, 0)
     cfg.dma_burst_size = 64;
